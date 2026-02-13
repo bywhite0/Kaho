@@ -201,12 +201,14 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "nonebot-adapter-console" },
+    { name = "nonebot-plugin-localstore" },
     { name = "nonebot2", extra = ["fastapi"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "nonebot-adapter-console" },
+    { name = "nonebot-plugin-localstore" },
     { name = "nonebot2", extras = ["fastapi"] },
 ]
 
@@ -494,6 +496,21 @@ wheels = [
 ]
 
 [[package]]
+name = "nonebot-plugin-localstore"
+version = "0.7.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "nonebot2" },
+    { name = "nonestorage" },
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/63/22/67ec1e604c0385729bf2d71db406c032de9015363588785617113dfb76ac/nonebot_plugin_localstore-0.7.4.tar.gz", hash = "sha256:85ddc13814bfcd484ab311306823651390020bf44f4fb4733b343a58e72723ce", size = 5535, upload-time = "2025-03-01T12:54:04.077Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7b/c8/0fcb2c6d994579e53342cbf11bf9326ddfab010d1a8063e1fc0cc19c13bf/nonebot_plugin_localstore-0.7.4-py3-none-any.whl", hash = "sha256:3b08030878eadcdd8b9ce3d079da0dc2d0e41dc91f0b2d8cf7fa862a27de9090", size = 6963, upload-time = "2025-03-01T12:54:02.137Z" },
+]
+
+[[package]]
 name = "nonebot2"
 version = "2.4.4"
 source = { registry = "https://pypi.org/simple" }
@@ -531,6 +548,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d0/14/4ef5d6b9569315a36160cbb4f43837ba1452df08229fa47654928111f7a3/nonechat-0.6.1.tar.gz", hash = "sha256:4cf39badc4af1ebf72062dac879bd8f0a0063ce4f8e53e9679988b2ec6667117", size = 19294, upload-time = "2025-07-24T06:57:45.696Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9f/d5/8f30606713bea1d862477c67f5f4c8bda562c752d72321630b6269cd920f/nonechat-0.6.1-py3-none-any.whl", hash = "sha256:899f26416e01cc0f3beb4798e8ce73a47bac4627b610a0609fe07f6d8246bf0c", size = 28454, upload-time = "2025-07-24T06:57:44.226Z" },
+]
+
+[[package]]
+name = "nonestorage"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/58/04676895dc6aa4fa6b6bfb069692d1469bfeb175bf6c25ea071762d2b006/nonestorage-0.1.0.tar.gz", hash = "sha256:818232236455c79cabbb69e716f73aa1b9c21d579f1c1fcbdba273b60bac72d9", size = 19257, upload-time = "2024-12-21T08:35:18.1Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/30/54/7c796d764ef0c53d94862b1cfe55fcc383a0ba7c2764c0ce40307438a052/nonestorage-0.1.0-py3-none-any.whl", hash = "sha256:35811adf67c680c272bcb71fa9d6c3613cc2d1bb79f5bfc7d83c4412a79537cb", size = 4127, upload-time = "2024-12-21T08:35:15.732Z" },
 ]
 
 [[package]]
