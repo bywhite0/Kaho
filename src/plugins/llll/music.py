@@ -44,10 +44,8 @@ def _append_stage_info(lines, dm, stage_entries, fever_section_no=None, show_lev
                             section_effects.insert(target_index, first_effect)
                 lines.append("      区段效果:")
                 for effect in section_effects:
-                    section_no = effect.get("section_no")
                     desc = effect.get("description")
-                    label = f"区段 {section_no + 1}" if section_no is not None else "区段"
-                    lines.append(f"        {label}: {desc}")
+                    lines.append(f"        - {desc}")
         if live_stage:
             skill_desc = live_stage.get("StageSkillDescription") or ""
             if skill_desc:
