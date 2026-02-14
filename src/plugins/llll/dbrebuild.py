@@ -1,10 +1,9 @@
 from nonebot import on_command
-
-from src.core.data_manager import DataManager
+from nonebot.permission import SUPERUSER
 from src.plugins.llll._common import get_dm_instance, get_version_path
 
 
-dbrebuild_cmd = on_command("dbrebuild")
+dbrebuild_cmd = on_command("dbrebuild", permission=SUPERUSER)
 
 
 @dbrebuild_cmd.handle()
