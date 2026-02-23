@@ -1,6 +1,8 @@
 {% macro icon(id, type='skill', size=24, class='') %}
     {% if type == 'skill' %}
         {% set src = config.ICON_BASE_URL ~ '/icon_skill_' ~ id ~ '.png' %}
+    {% elif type == 'section' %}
+        {% set src = config.ICON_SECTION_URL ~ '/icon_section_' ~ id ~ '.png' %}
     {% else %}
         {% set src = config.ICON_BASE_URL ~ '/' ~ id %}
     {% endif %}

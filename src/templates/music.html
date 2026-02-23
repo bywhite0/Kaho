@@ -44,7 +44,7 @@
                     {% for effect in stage.effects %}
                     <li>
                         {% if effect.icon_id %}
-                        {{ icon(effect.icon_id, size=20) }}
+                        {{ icon(effect.icon_id, type='section', size=20) }}
                         {% endif %}
                         {{ effect.text }}
                     </li>

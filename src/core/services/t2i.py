@@ -28,7 +28,8 @@ class T2IService:
              
         # Inject global config
         self.env.globals['config'] = {
-            'ICON_BASE_URL': self.icon_base_url
+            'ICON_BASE_URL': self.icon_base_url,
+            'ICON_SECTION_URL': os.getenv("ICON_SECTION_URL", self.icon_base_url.replace("skills", "section"))
         }
 
     async def generate_image(self, template_name: str, data: Dict[str, Any]) -> bytes:
