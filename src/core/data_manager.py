@@ -1,3 +1,4 @@
+import csv
 import os
 import re
 
@@ -7,6 +8,8 @@ from src.core.services.data_store import DataStore
 class DataManager:
     def __init__(self, data_dir):
         self.data_dir = data_dir
+        self.cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "cache", "plain")
+        self.data = {}
         self.store = DataStore(data_dir)
         self.card_datas = []
         self.card_rarities = {}
@@ -143,6 +146,8 @@ class DataManager:
             "center_attributes",
             "rhythm_skills",
             "token_skill_map",
+            "card_evolution_materials",
+            "card_skill_levelup_materials",
         )
 
     def _ensure(self, *groups):
@@ -225,6 +230,10 @@ class DataManager:
                 self._load_rhythm_skills()
             elif group == "token_skill_map":
                 self._load_token_skill_map()
+            elif group == "card_evolution_materials":
+                self._load_card_evolution_materials()
+            elif group == "card_skill_levelup_materials":
+                self._load_card_skill_levelup_materials()
             self._loaded.add(group)
 
     def _load_characters(self):
@@ -273,7 +282,7 @@ class DataManager:
         unit_chars = self.load_yaml_file("UnitCharacters.yaml") or []
         for uc in unit_chars:
             cid, uid = uc['CharactersId'], uc['UnitsId']
-            if uid >= 100 and cid not in self.char_units:
+            if uid > 100 and cid not in self.char_units:
                 self.char_units[cid] = uid
 
     def _load_gachas(self):
@@ -325,6 +334,164 @@ class DataManager:
                 prefix = d_id[:-1]
                 self.token_skill_map[prefix] = d['EffectValue']
 
+    def _load_card_evolution_materials(self):
+        self.card_evolution_materials = {m['Id']: m for m in (self.load_yaml_file("CardEvolutionMaterials.yaml") or [])}
+
+    def _load_card_skill_levelup_materials(self):
+        self.card_skill_levelup_materials = {}
+        mats = self.load_yaml_file("CardSkillLevelUpMaterials.yaml") or []
+        for m in mats:
+            sid = m['CardSeriesId']
+            if sid not in self.card_skill_levelup_materials:
+                self.card_skill_levelup_materials[sid] = []
+            self.card_skill_levelup_materials[sid].append(m)
+        for sid in self.card_skill_levelup_materials:
+            self.card_skill_levelup_materials[sid].sort(key=lambda x: (x.get('SkillType', 0), x.get('SkillLevel', 0)))
+
+    def get_music_chart_data(self, music_id):
+        # Check DB first
+        cached = self.store.get_music_chart(music_id)
+        if cached:
+            return cached
+
+        csv_path = os.path.join(self.cache_dir, f"musicscore_{music_id}.csv")
+        if not os.path.exists(csv_path):
+            return None
+        
+        try:
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                header = next(reader, None)
+                if not header:
+                    return None
+                
+                rows = []
+                for row in reader:
+                    if len(row) < 3:
+                        continue
+                    rows.append(row)
+        except Exception:
+            return None
+
+        # Parse data
+        beat_hearts = []
+        sections = []
+        moods = []
+        end_time = 0
+        
+        # Row format: id, song_time, key_type, key_value, heart_appear_ratio
+        for row in rows:
+            try:
+                time = int(row[1])
+                k_type = int(row[2])
+                val = int(row[3])
+            except ValueError:
+                continue
+            
+            if k_type == 1:
+                beat_hearts.append(time)
+            elif k_type == 10:
+                moods.append({"time": time, "value": val})
+            elif k_type == 20:
+                sections.append(time)
+            elif k_type == 99:
+                end_time = time
+
+        if not end_time and rows:
+            try:
+                end_time = int(rows[-1][1])
+            except:
+                end_time = 120000
+
+        # Calculate section stats
+        # Sections should include start times.
+        # Section 1 starts at 0.
+        # Subsequent sections start at the times in `sections`.
+        # Total usually 5 sections.
+        
+        section_boundaries = [0] + sorted(sections) + [end_time]
+        # Remove duplicates if 0 is already in sections (unlikely but safe)
+        section_boundaries = sorted(list(set(section_boundaries)))
+        
+        # Ensure we have at least start and end
+        if len(section_boundaries) < 2:
+            section_boundaries = [0, end_time]
+
+        chart_sections = []
+        for i in range(len(section_boundaries) - 1):
+            start = section_boundaries[i]
+            end = section_boundaries[i+1]
+            duration = end - start
+            
+            # Count beats in this section
+            count = sum(1 for t in beat_hearts if start <= t < end)
+            
+            chart_sections.append({
+                "index": i + 1,
+                "start_time": start,
+                "end_time": end,
+                "duration": duration,
+                "duration_sec": round(duration / 1000, 1),
+                "beat_count": count,
+                "percentage": (duration / end_time * 100) if end_time > 0 else 0
+            })
+
+        # Calculate Mood Line
+        # Mood value changes at specific times. We want to sample or list these points.
+        # Initial mood is 0 at time 0.
+        # The points should be normalized to percentage for CSS plotting.
+        
+        mood_points = []
+        # Add start point
+        mood_points.append({"time": 0, "value": 0}) 
+        
+        sorted_moods = sorted(moods, key=lambda x: x['time'])
+        
+        for m in sorted_moods:
+            t = m['time']
+            val = m['value']
+            # Step function: mood stays at previous value until 't', then jumps to 'val'
+            if mood_points:
+                prev = mood_points[-1]
+                if prev['time'] < t:
+                    mood_points.append({"time": t, "value": prev['value']}) # Point before jump
+            mood_points.append({"time": t, "value": val}) # Jump to new value
+            
+        # Add end point
+        if end_time > mood_points[-1]['time']:
+            mood_points.append({"time": end_time, "value": mood_points[-1]['value']})
+            
+        # Normalize Y
+        max_val = max((p['value'] for p in mood_points), default=100)
+        min_val = min((p['value'] for p in mood_points), default=-100)
+        abs_max = max(abs(max_val), abs(min_val))
+        if abs_max == 0: abs_max = 100
+        
+        final_points = []
+        for p in mood_points:
+            x_pct = (p['time'] / end_time * 100) if end_time > 0 else 0
+            # 50% is center (0). +abs_max -> 10% (top). -abs_max -> 90% (bottom).
+            # Range is 80% (from 10% to 90%).
+            y_pct = 50 - (p['value'] / abs_max * 40)
+            final_points.append({
+                "x": round(x_pct, 2),
+                "y": round(y_pct, 2),
+                "val": p['value']
+            })
+
+        result = {
+            "total_time": end_time,
+            "total_time_sec": round(end_time / 1000, 1),
+            "total_beats": len(beat_hearts),
+            "sections": chart_sections,
+            "moods": final_points
+        }
+        
+        # Save to DB
+        self.store.save_music_chart(music_id, result)
+        
+        return result
+
     def get_character_id_by_name(self, name):
         self._ensure("characters")
         target = name.replace(" ", "").lower()
@@ -358,15 +525,7 @@ class DataManager:
         if not char or char.get('GenerationsId') == 100:
             return ""
         gen_val = char.get('DisplayGeneration') or char.get('GenerationsId')
-        try:
-            n = int(gen_val)
-            if 11 <= (n % 100) <= 13:
-                suffix = 'th'
-            else:
-                suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
-            return f"{n}{suffix}"
-        except:
-            return str(gen_val)
+        return str(gen_val) + "期"
 
     def get_character_unit(self, char_id):
         self._ensure("unit_characters")
@@ -425,8 +584,13 @@ class DataManager:
             for i in range(1, 15):
                 field = f'PickUpCardSeriesId_{i}'
                 if g.get(field) == series_id:
-                    results.append(g['GachaSeriesName'])
+                    results.append({
+                        "name": g['GachaSeriesName'],
+                        "start_time": g.get("StartTime"),
+                        "end_time": g.get("EndTime")
+                    })
                     break
+        results.sort(key=lambda x: x["start_time"] or 0)
         return results
 
     def get_costume_models_by_character(self, char_id):
@@ -692,6 +856,7 @@ class DataManager:
                 "section_no": section.get("SectionNo"),
                 "description": section_skill.get("Description") or f"SectionSkill {section_skill_id}",
                 "effect_ids": effect_ids,
+                "skill_icon": section_skill.get("SkillIcon"),
             })
         results.sort(key=lambda x: x["section_no"])
         return results
@@ -1113,3 +1278,49 @@ class DataManager:
             if attr_data and attr_data['icon_id']:
                 icons["special_attribute_icon"] = f"icon_skill_{attr_data['icon_id']}.png"
         return icons
+
+    def get_card_evolution_materials(self, card_id):
+        self._ensure("card_evolution_materials", "items")
+        mat_entry = self.card_evolution_materials.get(card_id)
+        if not mat_entry:
+            return []
+        result = []
+        for i in range(1, 4):
+            item_id = mat_entry.get(f"CostItemsId{i}")
+            num = mat_entry.get(f"CostNum{i}")
+            if item_id and num:
+                item = self.items.get(item_id)
+                name = item.get("Name") if item else str(item_id)
+                result.append({"name": name, "count": num})
+        return result
+
+    def get_card_skill_levelup_materials(self, series_id):
+        self._ensure("card_skill_levelup_materials", "items")
+        entries = self.card_skill_levelup_materials.get(series_id, [])
+        result = []
+        for entry in entries:
+            mats = []
+            item_ids = self._normalize_id_list(entry.get("Cost_ItemsIds"))
+            nums = self._normalize_id_list(entry.get("CostNums"))
+            for i, item_id in enumerate(item_ids):
+                if i < len(nums):
+                    num = nums[i]
+                    if item_id and num:
+                        item = self.items.get(item_id)
+                        name = item.get("Name") if item else str(item_id)
+                        mats.append({"name": name, "count": num})
+            if not mats:
+                for i in range(1, 4):
+                    item_id = entry.get(f"Cost_ItemsId{i}")
+                    num = entry.get(f"CostNum{i}")
+                    if item_id and num:
+                        item = self.items.get(item_id)
+                        name = item.get("Name") if item else str(item_id)
+                        mats.append({"name": name, "count": num})
+            if mats:
+                result.append({
+                    "type": entry.get("SkillType"),
+                    "level": entry.get("SkillLevel"),
+                    "materials": mats
+                })
+        return result

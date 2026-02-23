@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Find Cards{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>{{ character_name }} 的卡牌</h1>
+    <p>共找到 {{ count }} 张卡牌</p>
+</div>
+
+<div class="section">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>稀有度</th>
+                <th>名称</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in cards %}
+            <tr>
+                <td>{{ c.id }}</td>
+                <td>{{ c.rarity }}</td>
+                <td>{{ c.name }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

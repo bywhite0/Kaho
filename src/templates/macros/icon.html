@@ -1,0 +1,13 @@
+{% macro icon(id, type='skill', size=24, class='') %}
+    {% if type == 'skill' %}
+        {% set src = config.ICON_BASE_URL ~ '/icon_skill_' ~ id ~ '.png' %}
+    {% else %}
+        {% set src = config.ICON_BASE_URL ~ '/' ~ id %}
+    {% endif %}
+    <img src="{{ src }}" 
+         width="{{ size }}" 
+         height="{{ size }}" 
+         class="{{ class }}" 
+         style="vertical-align: middle; object-fit: contain;" 
+         onerror="this.style.display='none'">
+{% endmacro %}

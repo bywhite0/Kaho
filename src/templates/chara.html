@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Character {{ cid }}{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>{{ name }} <small style="font-size: 0.6em; color: #888;">(#{{ cid }})</small></h1>
+    {% if generation %}<p><strong>期数:</strong> {{ generation }}</p>{% endif %}
+    {% if unit %}<p><strong>组合:</strong> {{ unit }}</p>{% endif %}
+    {% if cv %}<p><strong>声优:</strong> {{ cv }}</p>{% endif %}
+</div>
+
+<div class="section">
+    <div class="section-title">档案</div>
+    <ul>
+        {% for k, v in profile.items() %}
+        <li><strong>{{ k }}:</strong> {{ v }}</li>
+        {% endfor %}
+    </ul>
+</div>
+
+{% if gifts %}
+<div class="section">
+    <div class="section-title">喜好礼物</div>
+    <ul>
+        {% for g in gifts %}
+        <li><span style="color: gold;">{{ '★' * g.rank }}</span> {{ g.name }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{% if costumes %}
+<div class="section">
+    <div class="section-title">服装</div>
+    <ul>
+        {% for k, v in costumes.items() %}
+        <li><strong>{{ k }}:</strong> {{ v }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+{% endblock %}

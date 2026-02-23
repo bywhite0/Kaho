@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}Card {{ series_id }}{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>{{ base.Name }} <small style="font-size: 0.6em; color: #888;">(#{{ series_id }})</small></h1>
+    <div class="info-grid">
+        <p><strong>角色:</strong> {{ character_name }}</p>
+        <p><strong>稀有度:</strong> {{ rarity_name }} <span class="tag">{{ limited_type }}</span></p>
+        <p><strong>风格:</strong> {{ style_name }} | <strong>心情:</strong> {{ mood_name }}</p>
+        {% if gachas %}
+        <p><strong>登场卡池:</strong> {{ gachas|join(', ') }}</p>
+        {% endif %}
+        {% if release_date %}
+        <p><strong>实装日期:</strong> {{ release_date }}</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="section">
+    <div class="section-title">数值</div>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>State</th>
+                <th>Smile</th>
+                <th>Pure</th>
+                <th>Cool</th>
+                <th>Mental</th>
+                <th>BP</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in all_cards %}
+            <tr>
+                <td>{{ c.Id }}</td>
+                <td>{{ c.Id % 10 }}</td>
+                <td>Max: {{ c.MaxSmile }}<br><small>Init: {{ c.InitialSmile }}</small></td>
+                <td>Max: {{ c.MaxPure }}<br><small>Init: {{ c.InitialPure }}</small></td>
+                <td>Max: {{ c.MaxCool }}<br><small>Init: {{ c.InitialCool }}</small></td>
+                <td>Max: {{ c.MaxMental }}<br><small>Init: {{ c.InitialMental }}</small></td>
+                <td>{{ c.BeatPoint }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if evolution_materials %}
+<div class="section">
+    <div class="section-title">特训材料</div>
+    <ul>
+        {% for mat in evolution_materials %}
+        <li style="display: inline-block; margin-right: 15px;">{{ mat.name }} x{{ mat.count }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{% if skill_materials %}
+<div class="section">
+    <div class="section-title">技能升级材料</div>
+    <div style="max-height: 150px; overflow-y: auto; font-size: 0.9em;">
+        {% for entry in skill_materials %}
+        {% if entry.level > 1 %}
+        <p style="margin: 2px 0;"><strong>Lv {{ entry.level }}</strong>: 
+            {% for m in entry.materials %}
+            {{ m.name }} x{{ m.count }}{% if not loop.last %}, {% endif %}
+            {% endfor %}
+        </p>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="section">
+    <div class="section-title">SIS Mode (School Idol Stage)</div>
+    {% if sis_skill_text %}
+    <div class="skill-box">
+        <div style="white-space: pre-wrap; font-family: monospace;">{{ sis_skill_text }}</div>
+    </div>
+    {% endif %}
+    {% if sis_special_text %}
+    <div class="skill-box">
+        <div style="white-space: pre-wrap; font-family: monospace;">{{ sis_special_text }}</div>
+    </div>
+    {% endif %}
+    {% if sis_attribute_text %}
+    <div class="skill-box">
+        <div style="white-space: pre-wrap; font-family: monospace;">{{ sis_attribute_text }}</div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="section">
+    <div class="section-title">Rhythm Mode (School Idol Show)</div>
+    {% if rhythm_skill_text %}
+    <div class="skill-box">
+        <div style="white-space: pre-wrap; font-family: monospace;">{{ rhythm_skill_text }}</div>
+    </div>
+    {% endif %}
+    {% if center_skill_text %}
+    <div class="skill-box">
+        <div style="white-space: pre-wrap; font-family: monospace;">{{ center_skill_text }}</div>
+    </div>
+    {% endif %}
+    {% if center_attributes %}
+    <div class="skill-box">
+        <strong>Center 属性:</strong>
+        <ul>
+            {% for attr in center_attributes %}
+            <li>{{ attr.CenterAttributeName }}: {{ attr.Description }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</div>
+
+{% if duet_voice %}
+<div class="section">
+    <div class="section-title">互动语音</div>
+    <p><strong>角色:</strong> {{ duet_voice|join(', ') }}</p>
+</div>
+{% endif %}
+
+{% if style_voice_entries or (base.Rarity in [5, 7, 9] and has_style_movie) %}
+<div class="section">
+    <div class="section-title">风格素材</div>
+    {% if base.Rarity in [5, 7, 9] and has_style_movie %}
+    <p><strong>视频:</strong> picture_ur_get_{{ series_id }}_in.usm / picture_ur_get_{{ series_id }}_loop.usm</p>
+    {% endif %}
+    {% if style_voice_entries %}
+    <p><strong>语音:</strong></p>
+    <ul>
+        {% for entry in style_voice_entries %}
+        <li>{{ entry.name }}: {{ entry.voice }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="section">
+    <div class="section-title">图片资源</div>
+    <div class="image-grid">
+        <!-- Assuming images are paths or names, not actual URLs we can display easily without serving them. 
+             If the T2I service is local, maybe we can resolve paths? 
+             For now, just list them as text or placeholders. -->
+        <div class="image-item">
+            <p><strong>通用</strong></p>
+            <p>deck_frame_chara: image_deck_frame_chara_{{ series_id }}.png</p>
+        </div>
+        {% if state_0_images %}
+        <div class="image-item">
+            <p><strong>形态 0（特训前）</strong></p>
+            <ul>
+                {% for k, v in state_0_images.items() %}
+                <li>{{ k }}: {{ v }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        {% if state_1_images %}
+        <div class="image-item">
+            <p><strong>{{ state_1_label }}</strong></p>
+            <ul>
+                {% for k, v in state_1_images.items() %}
+                <li>{{ k }}: {{ v }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if icons %}
+<div class="section">
+    <div class="section-title">图标</div>
+    <ul>
+        {% for k, v in icons.items() %}
+        <li>{{ k }}: {{ v }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{% endblock %}

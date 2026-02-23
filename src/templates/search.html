@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Search Results{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>搜索结果</h1>
+    <p>关键词: "{{ query }}"</p>
+</div>
+
+<div class="section">
+    {% if results %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>稀有度</th>
+                <th>名称</th>
+                <th>角色</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in results %}
+            <tr>
+                <td>{{ c.CardSeriesId }}</td>
+                <td>{{ c.rarity_name }}</td>
+                <td>{{ c.Name }}</td>
+                <td>{{ c.character_name }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>未找到相关卡牌。</p>
+    {% endif %}
+</div>
+{% endblock %}

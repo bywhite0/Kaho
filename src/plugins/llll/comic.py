@@ -1,7 +1,8 @@
 from nonebot import on_command
-from nonebot.adapters.console import Message
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
 
+from src.core.services.t2i import get_t2i_service
 from ._common import get_dm_instance
 
 
@@ -22,20 +23,30 @@ async def _(args: Message = CommandArg()):
     query = args.extract_plain_text().strip()
     results = dm.search_comics(query)
     if not results:
-        output = "未找到。"
-    else:
-        lines = []
-        for entry in results:
-            comic_id = entry.get("Id")
-            name = entry.get("Name") or ""
-            tab_id = entry.get("TabListId")
-            tab_name = TAB_LIST_MAP.get(tab_id, f"标签 {tab_id}")
-            appearance_ids = entry.get("AppearanceCharacterIds") or []
-            appearance_names = [dm.get_character_name(cid) for cid in appearance_ids]
-            characters = ", ".join(appearance_names) if appearance_names else "-"
-            lines.append(f"[{comic_id}] {name}（{tab_name}）")
-            lines.append(f"  登场角色: {characters}")
-        output = "\n".join(lines)
-    output = (output or "").rstrip()
-    if output:
-        await comic_cmd.finish(output)
+        await comic_cmd.finish("未找到。")
+        return
+
+    comics = []
+    for entry in results:
+        comic_id = entry.get("Id")
+        name = entry.get("Name") or ""
+        tab_id = entry.get("TabListId")
+        tab_name = TAB_LIST_MAP.get(tab_id, f"标签 {tab_id}")
+        appearance_ids = entry.get("AppearanceCharacterIds") or []
+        appearance_names = [dm.get_character_name(cid) for cid in appearance_ids]
+        characters = ", ".join(appearance_names) if appearance_names else "-"
+        
+        comics.append({
+            "Id": comic_id,
+            "Name": name,
+            "tab_name": tab_name,
+            "characters": characters
+        })
+
+    try:
+        img_bytes = await get_t2i_service().generate_image("comic.html", {"results": comics})
+    except Exception as e:
+        await comic_cmd.finish(f"生成图片失败: {e}")
+        return
+
+    await comic_cmd.finish(MessageSegment.image(img_bytes))

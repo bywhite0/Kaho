@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Comics{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>漫画搜索结果</h1>
+</div>
+
+<div class="section">
+    {% if results %}
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>标题</th>
+                <th>标签</th>
+                <th>登场角色</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for comic in results %}
+            <tr>
+                <td>{{ comic.Id }}</td>
+                <td>{{ comic.Name }}</td>
+                <td>{{ comic.tab_name }}</td>
+                <td>{{ comic.characters }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>未找到相关漫画。</p>
+    {% endif %}
+</div>
+{% endblock %}

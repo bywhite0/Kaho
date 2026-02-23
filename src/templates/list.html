@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Character List{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>角色列表</h1>
+</div>
+
+<div class="section">
+    <div class="image-grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
+        {% for char in characters %}
+        <div class="skill-box">
+            <strong>{{ char.id }}</strong>: {{ char.name }}
+            {% if char.generation %}
+            <br><small>{{ char.generation }}</small>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

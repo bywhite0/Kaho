@@ -3,8 +3,12 @@ import os
 import sqlite3
 
 import yaml
-from nonebot import logger
-
+try:
+    from nonebot import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger("DataStore")
+    logging.basicConfig(level=logging.INFO)
 
 class DataStore:
     def __init__(self, data_dir):
@@ -39,6 +43,27 @@ class DataStore:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS yaml_rows (filename TEXT, id INTEGER, data_json TEXT, PRIMARY KEY (filename, id))"
             )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS music_charts (music_id INTEGER PRIMARY KEY, data_json TEXT)"
+            )
+
+    def save_music_chart(self, music_id, data):
+        data_json = json.dumps(data, ensure_ascii=False, default=str)
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO music_charts (music_id, data_json) VALUES (?, ?)",
+                (music_id, data_json),
+            )
+            
+    def get_music_chart(self, music_id):
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT data_json FROM music_charts WHERE music_id = ?",
+                (music_id,),
+            ).fetchone()
+            if not row:
+                return None
+            return json.loads(row["data_json"])
 
     def load_yaml_file(self, filename, sanitizer=None):
         path = os.path.join(self.data_dir, filename)
