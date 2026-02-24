@@ -18,19 +18,30 @@ class T2IService:
             autoescape=jinja2.select_autoescape(['html', 'xml'])
         )
         
+        # Project root for resolving relative paths
+        self.project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        
         # Load environment config
-        self.icon_base_url = os.getenv("ICON_BASE_URL", "exports/icons/skills")
-        if self.icon_base_url.startswith(".") or not (self.icon_base_url.startswith("http") or self.icon_base_url.startswith("/")):
-             # Resolve relative path to absolute file path for local rendering
-             # Assuming exports is at project root
-             project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-             self.icon_base_url = "file:///" + os.path.join(project_root, self.icon_base_url).replace("\\", "/")
+        self.icon_base_url = self._resolve_path(os.getenv("ICON_BASE_URL", "exports/icons/skills"))
              
         # Inject global config
         self.env.globals['config'] = {
             'ICON_BASE_URL': self.icon_base_url,
-            'ICON_SECTION_URL': os.getenv("ICON_SECTION_URL", self.icon_base_url.replace("skills", "section"))
+            'ICON_SECTION_URL': self._resolve_path(os.getenv("ICON_SECTION_URL", "exports/icons/section")),
+            'ICON_ITEM_URL': self._resolve_path(os.getenv("ICON_ITEM_URL", "exports/icons/item")),
+            'IMG_MUSIC_THUMBNAIL_URL': self._resolve_path(os.getenv("IMG_MUSIC_THUMBNAIL_URL", "exports/images/music/thumbnail")),
+            'IMG_COMIC_THUMBNAIL_URL': self._resolve_path(os.getenv("IMG_COMIC_THUMBNAIL_URL", "exports/images/comic_thumbnail")),
+            'IMG_CARD_FULL_URL': self._resolve_path(os.getenv("IMG_CARD_FULL_URL", "exports/images/card_full")),
+            'IMG_CARD_MIDDLE_VERTICAL_URL': self._resolve_path(os.getenv("IMG_CARD_MIDDLE_VERTICAL_URL", "exports/images/card_middle_vertical")),
+            'IMG_DECK_FRAME_CHARA_URL': self._resolve_path(os.getenv("IMG_DECK_FRAME_CHARA_URL", "exports/images/deck_frame_chara")),
+            'IMG_PROF_CUSTOM_URL': self._resolve_path(os.getenv("IMG_PROF_CUSTOM_URL", "exports/images/prof_custom")),
         }
+    
+    def _resolve_path(self, path: str) -> str:
+        """Resolve a relative path to an absolute file:// URL for local rendering."""
+        if path.startswith(".") or not (path.startswith("http") or path.startswith("/")):
+            return "file:///" + os.path.join(self.project_root, path).replace("\\", "/")
+        return path
 
     async def generate_image(self, template_name: str, data: Dict[str, Any]) -> bytes:
         """

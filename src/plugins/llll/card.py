@@ -5,6 +5,7 @@ from nonebot.params import CommandArg
 from src.utils.formatters import print_merged_skill
 from src.core.services.t2i import get_t2i_service
 from ._common import get_dm_instance
+import os
 
 
 card_cmd = on_command("card")
@@ -13,6 +14,7 @@ card_cmd = on_command("card")
 @card_cmd.handle()
 async def _(args: Message = CommandArg()):
     dm = await get_dm_instance()
+    cwd = os.getcwd().replace("\\", "/")
     query = args.extract_plain_text().strip()
     if not query:
         return
@@ -94,15 +96,44 @@ async def _(args: Message = CommandArg()):
     state_0_card = next((c for c in all_cards if c['Id'] % 10 == 0), None)
     state_1_card = next((c for c in all_cards if c['Id'] % 10 == 1), None)
 
+    path_map = {
+        "full": "exports/images/card_full",
+        "middle_vertical": "exports/images/card_middle_vertical",
+        "deck_frame_chara": "exports/images/deck_frame_chara",
+        "prof_custom": "exports/images/prof_custom",
+    }
+
     if state_0_card:
         imgs = dm.get_image_set(state_0_card['Id'])
-        imgs.pop("deck_frame_chara", None)
+        new_imgs = {}
+        for k, v in imgs.items():
+            if k == 'deck_frame_chara':
+                new_imgs[k] = series_id
+            else:
+                new_imgs[k] = state_0_card['Id']
+        imgs = new_imgs
+            
+        if "deck_frame_chara" in imgs:
+            data["deck_frame_chara"] = imgs.pop("deck_frame_chara")
+            
         data["state_0_images"] = imgs
     
     if state_1_card:
         data["state_1_label"] = "形态 1（特训后）" if state_0_card else "形态 1（仅此形态）"
         imgs = dm.get_image_set(state_1_card['Id'])
-        imgs.pop("deck_frame_chara", None)
+        new_imgs = {}
+        for k, v in imgs.items():
+            if k == 'deck_frame_chara':
+                new_imgs[k] = series_id
+            else:
+                new_imgs[k] = state_1_card['Id']
+        imgs = new_imgs
+            
+        if "deck_frame_chara" in imgs:
+            dfc = imgs.pop("deck_frame_chara")
+            if "deck_frame_chara" not in data:
+                data["deck_frame_chara"] = dfc
+                
         data["state_1_images"] = imgs
 
     # Icons

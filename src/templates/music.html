@@ -1,23 +1,34 @@
 {% extends "base.html" %}
 {% from "macros/icon.html" import icon %}
+{% from "macros/img.html" import res_img %}
 
 {% block title %}Music Search{% endblock %}
 
 {% block content %}
 {% for music in musics %}
-<div class="header">
-    <h1>{{ music.title }} <small style="font-size: 0.6em; color: #888;">(#{{ music.music_id }})</small></h1>
-    <p><strong>简介:</strong> {{ music.description }}</p>
-    <p><strong>歌曲类型:</strong> {{ music.song_type }} ({{ music.song_type_label }})</p>
-    <p><strong>心情:</strong> {{ music.mood_name }}</p>
-    <p><strong>时长:</strong> {{ music.play_time_ms }} 毫秒 ({{ music.duration_text }})</p>
-    <p><strong>Center:</strong> {{ music.center_name }}</p>
-    {% if music.singers %}
-    <p><strong>演唱:</strong> {{ music.singers|join(', ') }}</p>
-    {% endif %}
-    {% if music.supports %}
-    <p><strong>支援角色:</strong> {{ music.supports|join(', ') }}</p>
-    {% endif %}
+<div class="header" style="display: flex; gap: 20px; align-items: flex-start;">
+    <div style="flex-shrink: 0;">
+        {{ res_img(music.music_id, 'music_thumbnail', width='120', height='120', style='object-fit: cover; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);') }}
+    </div>
+    <div style="flex-grow: 1;">
+        <h1 style="margin-top: 0;">{{ music.title }} <small style="font-size: 0.6em; color: #888;">(#{{ music.music_id }})</small></h1>
+        <p><strong>简介:</strong> {{ music.description }}</p>
+        <p><strong>歌曲类型:</strong> {{ music.song_type }} ({{ music.song_type_label }})</p>
+        <p><strong>心情:</strong> 
+            {% if music.mood_key %}
+            {{ icon(music.mood_key, type='mood', size=20) }}
+            {% endif %}
+            {{ music.mood_name }}
+        </p>
+        <p><strong>时长:</strong> {{ music.play_time_ms }} 毫秒 ({{ music.duration_text }})</p>
+        <p><strong>Center:</strong> {{ music.center_name }}</p>
+        {% if music.singers %}
+        <p><strong>演唱:</strong> {{ music.singers|join(', ') }}</p>
+        {% endif %}
+        {% if music.supports %}
+        <p><strong>支援角色:</strong> {{ music.supports|join(', ') }}</p>
+        {% endif %}
+    </div>
 </div>
 
 {% if music.score %}

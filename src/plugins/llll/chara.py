@@ -1,3 +1,4 @@
+import os
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
@@ -50,7 +51,7 @@ async def _(args: Message = CommandArg()):
     # Gifts
     gifts = dm.get_favorite_gifts(cid)
     if gifts:
-        data["gifts"] = gifts # gifts is list of dicts with 'rank' and 'name'
+        data["gifts"] = gifts
 
     # Costumes
     costume_groups = dm.get_costume_models_by_character(cid)

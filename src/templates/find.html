@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/img.html" import res_img %}
 
 {% block title %}Find Cards{% endblock %}
 
@@ -15,6 +16,7 @@
                 <th>ID</th>
                 <th>稀有度</th>
                 <th>名称</th>
+                <th>图片</th>
             </tr>
         </thead>
         <tbody>
@@ -23,6 +25,11 @@
                 <td>{{ c.id }}</td>
                 <td>{{ c.rarity }}</td>
                 <td>{{ c.name }}</td>
+                <td>
+                    {% for i in c.images %}
+                    {{ res_img(i.id, i.type, width='60', style='margin-right: 5px;') }}
+                    {% endfor %}
+                </td>
             </tr>
             {% endfor %}
         </tbody>

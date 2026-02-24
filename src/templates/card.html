@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/img.html" import res_img %}
 
 {% block title %}Card {{ series_id }}{% endblock %}
 
@@ -145,32 +146,47 @@
 
 <div class="section">
     <div class="section-title">图片资源</div>
-    <div class="image-grid">
-        <!-- Assuming images are paths or names, not actual URLs we can display easily without serving them. 
-             If the T2I service is local, maybe we can resolve paths? 
-             For now, just list them as text or placeholders. -->
-        <div class="image-item">
-            <p><strong>通用</strong></p>
-            <p>deck_frame_chara: image_deck_frame_chara_{{ series_id }}.png</p>
-        </div>
-        {% if state_0_images %}
-        <div class="image-item">
-            <p><strong>形态 0（特训前）</strong></p>
-            <ul>
-                {% for k, v in state_0_images.items() %}
-                <li>{{ k }}: {{ v }}</li>
-                {% endfor %}
-            </ul>
+    <div class="image-grid" style="display: flex; flex-direction: column; gap: 20px;">
+        
+        {% if deck_frame_chara %}
+        <div class="image-section">
+            <h3 style="border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 10px;">通用</h3>
+            <div class="image-item" style="text-align: center; display: inline-block;">
+                {{ res_img(deck_frame_chara, 'deck_frame_chara', alt="deck_frame_chara", style="max-width: 150px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);") }}
+                <div style="margin-top: 5px; font-size: 0.8em; color: #666;">deck_frame_chara</div>
+            </div>
         </div>
         {% endif %}
-        {% if state_1_images %}
-        <div class="image-item">
-            <p><strong>{{ state_1_label }}</strong></p>
-            <ul>
-                {% for k, v in state_1_images.items() %}
-                <li>{{ k }}: {{ v }}</li>
+
+        {% if state_0_images %}
+        <div class="image-section">
+            <h3 style="border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 10px;">形态 0（特训前）</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 15px;">
+                {% for k, v in state_0_images.items() %}
+                <div class="image-item" style="text-align: center;">
+                    <div style="width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #f9f9f9; border-radius: 8px; margin-bottom: 5px;">
+                         {{ res_img(v, k, alt=k, style="max-width: 100%; max-height: 100%; object-fit: contain;") }}
+                    </div>
+                    <div style="font-size: 0.8em; color: #666; word-break: break-all;">{{ k }}</div>
+                </div>
                 {% endfor %}
-            </ul>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if state_1_images %}
+        <div class="image-section">
+            <h3 style="border-bottom: 1px solid #eee; padding-bottom: 5px; margin-bottom: 10px;">{{ state_1_label }}</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 15px;">
+                {% for k, v in state_1_images.items() %}
+                <div class="image-item" style="text-align: center;">
+                    <div style="width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #f9f9f9; border-radius: 8px; margin-bottom: 5px;">
+                         {{ res_img(v, k, alt=k, style="max-width: 100%; max-height: 100%; object-fit: contain;") }}
+                    </div>
+                    <div style="font-size: 0.8em; color: #666; word-break: break-all;">{{ k }}</div>
+                </div>
+                {% endfor %}
+            </div>
         </div>
         {% endif %}
     </div>

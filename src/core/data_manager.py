@@ -541,7 +541,7 @@ class DataManager:
         for item_id, rank in gifts:
             item = self.items.get(item_id)
             if item:
-                results.append({"name": item.get('Name'), "rank": rank})
+                results.append({"name": item.get('Name'), "rank": rank, "id": item_id})
         results.sort(key=lambda x: x['rank'], reverse=True)
         return results
 

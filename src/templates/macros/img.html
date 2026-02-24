@@ -1,0 +1,22 @@
+{% macro res_img(id, type, width=None, height=None, alt='', class='', style='') %}
+{% if type == 'music_thumbnail' %}
+{% set src = config.IMG_MUSIC_THUMBNAIL_URL ~ '/image_music_thumbnail_' ~ id ~ '.png' %}
+{% elif type == 'comic_thumbnail' %}
+{% set src = config.IMG_COMIC_THUMBNAIL_URL ~ '/image_comic_thumbnail_' ~ id ~ '.png' %}
+{% elif type == 'card_full' %}
+{% set src = config.IMG_CARD_FULL_URL ~ '/image_card_full_' ~ id ~ '.png' %}
+{% elif type == 'card_middle_vertical' %}
+{% set src = config.IMG_CARD_MIDDLE_VERTICAL_URL ~ '/image_card_middle_vertical_' ~ id ~ '.png' %}
+{% elif type == 'deck_frame_chara' %}
+{% set src = config.IMG_DECK_FRAME_CHARA_URL ~ '/image_deck_frame_chara_' ~ id ~ '.png' %}
+{% elif type == 'prof_custom' %}
+{% set src = config.IMG_PROF_CUSTOM_URL ~ '/image_prof_custom_' ~ id ~ '.png' %}
+{% else %}
+{% set src = id %}
+{% endif %}
+
+<img src="{{ src }}" {% if width %}width="{{ width }}" {% endif %} {% if height %}height="{{ height }}" {% endif %}
+    alt="{{ alt }}" class="{{ class }}" style="{{ style }}"
+    onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';">
+<span style="display:none; color: red; font-size: 0.8em;">(Image not found: {{ src }})</span>
+{% endmacro %}

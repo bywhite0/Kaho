@@ -1,6 +1,7 @@
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
+import os
 
 from src.core.services.t2i import get_t2i_service
 from ._common import get_dm_instance

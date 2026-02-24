@@ -1,3 +1,4 @@
+import os
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
@@ -43,12 +44,26 @@ async def _(args: Message = CommandArg()):
         series_map[sid].append(c)
 
     display_cards = []
+    cwd = os.getcwd()
     for sid in sorted(series_map.keys()):
-        c = series_map[sid][0]
+        cards = series_map[sid]
+        
+        normal_card = next((c for c in cards if c.get('State') == 0), None)
+        idolized_card = next((c for c in cards if c.get('State') == 1), None)
+        
+        images = []
+        if normal_card:
+            images.append({"id": normal_card['Id'], "type": "card_middle_vertical", "label": "Normal"})
+                
+        if idolized_card:
+            images.append({"id": idolized_card['Id'], "type": "card_middle_vertical", "label": "Idolized"})
+
+        c = cards[0]
         display_cards.append({
             "id": sid,
             "rarity": dm.get_rarity_name(c['Rarity']),
-            "name": c['Name']
+            "name": c['Name'],
+            "images": images
         })
 
     data = {

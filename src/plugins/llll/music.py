@@ -1,6 +1,7 @@
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
+import os
 
 from src.core.services.t2i import get_t2i_service
 from ._common import get_dm_instance
@@ -94,6 +95,7 @@ async def _(args: Message = CommandArg()):
         return
 
     musics_data = []
+    cwd = os.getcwd()
     for entry in results:
         music_id = entry.get("Id")
         
@@ -112,19 +114,24 @@ async def _(args: Message = CommandArg()):
             if cid and cid != 0:
                 supports.append(dm.get_character_name(cid))
 
+        music_type = entry.get("MusicType")
+        mood_type_map = {1: "smile", 2: "pure", 3: "cool"}
+        mood_str = mood_type_map.get(music_type)
+
         music_data = {
             "music_id": music_id,
             "title": entry.get("Title") or "",
             "description": entry.get("Description") or "",
             "song_type": entry.get("SongType"),
             "song_type_label": dm.get_song_type_label(entry.get("SongType")),
-            "mood_name": dm.MOODS.get(entry.get("MusicType")) if entry.get("MusicType") is not None else entry.get("MusicType"),
+            "mood_name": dm.MOODS.get(music_type) if music_type is not None else music_type,
             "play_time_ms": entry.get("PlayTime"),
             "duration_text": _format_duration(entry.get("PlayTime")),
             "center_name": dm.get_character_name(center_id) if center_id else "-",
             "singers": singers,
             "supports": supports,
             "fever_section_no": entry.get("FeverSectionNo"),
+            "mood_key": mood_str,
         }
 
         # Score
