@@ -63,8 +63,16 @@ async def _(args: Message = CommandArg()):
     cost_sa = dm.get_cost_transition(series_id, 'SpecialAppealSeriesId', dm.get_card_skills_map(), 'SkillCost')
     
     data["sis_skill_text"] = print_merged_skill(dm, dm.get_all_skills_data(base.get('SkillSeriesId')), "技能: ", cost_str=f"（AP 消耗: {cost_s}）")
+    if dm.get_all_skills_data(base.get('SkillSeriesId')) and dm.get_all_skills_data(base.get('SkillSeriesId')).get('icon_id'):
+        data["sis_skill_icon_id"] = dm.get_all_skills_data(base.get('SkillSeriesId'))['icon_id']
+        
     data["sis_special_text"] = print_merged_skill(dm, dm.get_all_skills_data(base.get('SpecialAppealSeriesId')), "特殊演出: ", cost_str=f"（AP 消耗: {cost_sa}）")
+    if dm.get_all_skills_data(base.get('SpecialAppealSeriesId')) and dm.get_all_skills_data(base.get('SpecialAppealSeriesId')).get('icon_id'):
+        data["sis_special_icon_id"] = dm.get_all_skills_data(base.get('SpecialAppealSeriesId'))['icon_id']
+        
     data["sis_attribute_text"] = print_merged_skill(dm, dm.get_all_skills_data(base.get('AttributeId')), "特性: ")
+    if dm.get_all_skills_data(base.get('AttributeId')) and dm.get_all_skills_data(base.get('AttributeId')).get('icon_id'):
+        data["sis_attribute_icon_id"] = dm.get_all_skills_data(base.get('AttributeId'))['icon_id']
 
     # Rhythm Mode Skills
     cost_r = dm.get_cost_transition(series_id, 'RhythmGameSkillSeriesId', dm.get_rhythm_skills_map(), 'ConsumeAP')
@@ -115,6 +123,8 @@ async def _(args: Message = CommandArg()):
             
         if "deck_frame_chara" in imgs:
             data["deck_frame_chara"] = imgs.pop("deck_frame_chara")
+        if "full" in imgs:
+            data["state_0_full"] = imgs.pop("full")
             
         data["state_0_images"] = imgs
     
@@ -133,11 +143,11 @@ async def _(args: Message = CommandArg()):
             dfc = imgs.pop("deck_frame_chara")
             if "deck_frame_chara" not in data:
                 data["deck_frame_chara"] = dfc
+        if "full" in imgs:
+            data["state_1_full"] = imgs.pop("full")
                 
         data["state_1_images"] = imgs
 
-    # Icons
-    data["icons"] = dm.get_skill_icons(base.get('SkillSeriesId'), base.get('SpecialAppealSeriesId'), base.get('AttributeId'))
 
     try:
         img_bytes = await get_t2i_service().generate_image("card.html", data)
