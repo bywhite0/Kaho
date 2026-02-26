@@ -3,9 +3,11 @@
 {% set src = config.IMG_MUSIC_THUMBNAIL_URL ~ '/image_music_thumbnail_' ~ id ~ '.png' %}
 {% elif type == 'comic_thumbnail' %}
 {% set src = config.IMG_COMIC_THUMBNAIL_URL ~ '/image_comic_thumbnail_' ~ id ~ '.png' %}
-{% elif type == 'card_full' %}
+{% elif type == 'card_full' or type == 'full' %}
 {% set src = config.IMG_CARD_FULL_URL ~ '/image_card_full_' ~ id ~ '.png' %}
-{% elif type == 'card_middle_vertical' %}
+{% elif type == 'card_half' or type == 'half' %}
+{% set src = config.IMG_CARD_HALF_URL ~ '/image_card_half_' ~ id ~ '.png' %}
+{% elif type == 'card_middle_vertical' or type == 'middle_vertical' %}
 {% set src = config.IMG_CARD_MIDDLE_VERTICAL_URL ~ '/image_card_middle_vertical_' ~ id ~ '.png' %}
 {% elif type == 'deck_frame_chara' %}
 {% set src = config.IMG_DECK_FRAME_CHARA_URL ~ '/image_deck_frame_chara_' ~ id ~ '.png' %}

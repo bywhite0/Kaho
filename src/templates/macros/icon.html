@@ -4,7 +4,10 @@
 {% elif type == 'section' %}
 {% set src = config.ICON_SECTION_URL ~ '/icon_section_' ~ id ~ '.png' %}
 {% elif type == 'mood' %}
-{% set src = config.ICON_BASE_URL ~ '/icon_' ~ id ~ '.png' %}
+{% set src = config.ASSETS_ICON_URL ~ '/icon_mood_' ~ id ~ '.png' %}
+{% elif type == 'style' %}
+{% set fmt_id = "%02d"|format(id|int) %}
+{% set src = config.ASSETS_ICON_URL ~ '/icon_style_type_' ~ fmt_id ~ '.png' %}
 {% elif type == 'item' %}
 {% set src = config.ICON_ITEM_URL ~ '/icon_item_' ~ id ~ '.png' %}
 {% else %}

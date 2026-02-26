@@ -22,16 +22,19 @@ class T2IService:
         self.project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         
         # Load environment config
-        self.icon_base_url = self._resolve_path(os.getenv("ICON_BASE_URL", "exports/icons/skills"))
+        self.icon_base_url = self._resolve_path(os.getenv("ICON_BASE_URL", "exports/icons/skill"))
+        self.assets_icon_url = self._resolve_path(os.getenv("ASSETS_ICON_URL", "assets/icons"))
              
         # Inject global config
         self.env.globals['config'] = {
+            'ASSETS_ICON_URL': self.assets_icon_url,
             'ICON_BASE_URL': self.icon_base_url,
             'ICON_SECTION_URL': self._resolve_path(os.getenv("ICON_SECTION_URL", "exports/icons/section")),
             'ICON_ITEM_URL': self._resolve_path(os.getenv("ICON_ITEM_URL", "exports/icons/item")),
             'IMG_MUSIC_THUMBNAIL_URL': self._resolve_path(os.getenv("IMG_MUSIC_THUMBNAIL_URL", "exports/images/music/thumbnail")),
             'IMG_COMIC_THUMBNAIL_URL': self._resolve_path(os.getenv("IMG_COMIC_THUMBNAIL_URL", "exports/images/comic_thumbnail")),
             'IMG_CARD_FULL_URL': self._resolve_path(os.getenv("IMG_CARD_FULL_URL", "exports/images/card_full")),
+            'IMG_CARD_HALF_URL': self._resolve_path(os.getenv("IMG_CARD_HALF_URL", "exports/images/card_half")),
             'IMG_CARD_MIDDLE_VERTICAL_URL': self._resolve_path(os.getenv("IMG_CARD_MIDDLE_VERTICAL_URL", "exports/images/card_middle_vertical")),
             'IMG_DECK_FRAME_CHARA_URL': self._resolve_path(os.getenv("IMG_DECK_FRAME_CHARA_URL", "exports/images/deck_frame_chara")),
             'IMG_PROF_CUSTOM_URL': self._resolve_path(os.getenv("IMG_PROF_CUSTOM_URL", "exports/images/prof_custom")),
