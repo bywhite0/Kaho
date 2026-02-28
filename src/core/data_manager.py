@@ -8,7 +8,11 @@ from src.core.services.data_store import DataStore
 class DataManager:
     def __init__(self, data_dir):
         self.data_dir = data_dir
-        self.cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "cache", "plain")
+        self.cache_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "cache",
+            "plain",
+        )
         self.data = {}
         self.store = DataStore(data_dir)
         self.card_datas = []
@@ -72,26 +76,32 @@ class DataManager:
             105: "Edel Note",
         }
 
-        self.STYLES = {1: "Performer", 2: "Mood Maker", 3: "Cheerleader", 4: "Trickster"}
+        self.STYLES = {
+            1: "Performer",
+            2: "Mood Maker",
+            3: "Cheerleader",
+            4: "Trickster",
+        }
         self.MOODS = {1: "Happy", 2: "Neutral", 3: "Mellow"}
 
         self.LIMITED_TYPES = {
-            0: "Standard",
-            1: "Spring Limited",
-            2: "Summer Limited",
-            3: "Autumn Limited",
-            4: "Winter Limited",
-            5: "Graduation Limited",
-            9: "Birthday Limited",
-            11: "Party Limited",
-            101: "Live Grand Prix Rewards",
-            201: "Aikatsu! Limited",
-            202: "O.N.G.E.K.I. Limited",
-            203: "BanG Dream! Limited"
+            0: "常驻",
+            1: "春季限定",
+            2: "夏季限定",
+            3: "秋季限定",
+            4: "冬季限定",
+            5: "毕业限定",
+            9: "生日限定",
+            11: "派对限定",
+            101: "Live Grand Prix 奖励",
+            201: "偶像活动！限定",
+            202: "音击限定",
+            203: "BanG Dream! 限定",
+            204: "混组限定",
         }
 
     def sanitize_yaml(self, content):
-        return re.sub(r':\s+-\s*$', r': "-"', content, flags=re.MULTILINE)
+        return re.sub(r":\s+-\s*$", r': "-"', content, flags=re.MULTILINE)
 
     def load_yaml_file(self, filename):
         try:
@@ -237,10 +247,15 @@ class DataManager:
             self._loaded.add(group)
 
     def _load_characters(self):
-        self.characters = {c['Id']: c for c in (self.load_yaml_file("Characters.yaml") or [])}
+        self.characters = {
+            c["Id"]: c for c in (self.load_yaml_file("Characters.yaml") or [])
+        }
 
     def _load_card_rarities(self):
-        self.card_rarities = {r['Id']: r['RarityName'] for r in (self.load_yaml_file("CardRarities.yaml") or [])}
+        self.card_rarities = {
+            r["Id"]: r["RarityName"]
+            for r in (self.load_yaml_file("CardRarities.yaml") or [])
+        }
 
     def _load_card_datas(self):
         self.card_datas = self.load_yaml_file("CardDatas.yaml") or []
@@ -249,39 +264,43 @@ class DataManager:
         self.card_series_meta = {}
         c_series = self.load_yaml_file("CardSeries.yaml") or []
         for s in c_series:
-            self.card_series_meta[s['Id']] = s
+            self.card_series_meta[s["Id"]] = s
 
     def _load_skill_series(self):
-        self.skill_series = {s['Id']: s for s in (self.load_yaml_file("CardSkillSeries.yaml") or [])}
+        self.skill_series = {
+            s["Id"]: s for s in (self.load_yaml_file("CardSkillSeries.yaml") or [])
+        }
 
     def _load_skills(self):
         self.skills = {}
         all_skills = self.load_yaml_file("CardSkills.yaml") or []
         for s in all_skills:
-            ss_id = s['CardSkillSeriesId']
+            ss_id = s["CardSkillSeriesId"]
             if ss_id not in self.skills:
                 self.skills[ss_id] = []
             self.skills[ss_id].append(s)
         for ss_id in self.skills:
-            self.skills[ss_id].sort(key=lambda x: x['SkillLevel'])
+            self.skills[ss_id].sort(key=lambda x: x["SkillLevel"])
 
     def _load_items(self):
-        self.items = {item['Id']: item for item in (self.load_yaml_file("Items.yaml") or [])}
+        self.items = {
+            item["Id"]: item for item in (self.load_yaml_file("Items.yaml") or [])
+        }
 
     def _load_favorite_gifts(self):
         self.favorite_gifts = {}
         gifts_data = self.load_yaml_file("CharacterFavoriteGifts.yaml") or []
         for g in gifts_data:
-            cid = g['CharactersId']
+            cid = g["CharactersId"]
             if cid not in self.favorite_gifts:
                 self.favorite_gifts[cid] = []
-            self.favorite_gifts[cid].append((g['ItemsId'], g['FavoriteRank']))
+            self.favorite_gifts[cid].append((g["ItemsId"], g["FavoriteRank"]))
 
     def _load_unit_characters(self):
         self.char_units = {}
         unit_chars = self.load_yaml_file("UnitCharacters.yaml") or []
         for uc in unit_chars:
-            cid, uid = uc['CharactersId'], uc['UnitsId']
+            cid, uid = uc["CharactersId"], uc["UnitsId"]
             if uid > 100 and cid not in self.char_units:
                 self.char_units[cid] = uid
 
@@ -289,7 +308,9 @@ class DataManager:
         self.gachas = self.load_yaml_file("GachaSeries.yaml") or []
 
     def _load_costumes(self):
-        self.costumes = {c['Id']: c for c in (self.load_yaml_file("Costumes.yaml") or [])}
+        self.costumes = {
+            c["Id"]: c for c in (self.load_yaml_file("Costumes.yaml") or [])
+        }
 
     def _load_costume_models(self):
         self.costume_models = self.load_yaml_file("CostumeModels.yaml") or []
@@ -298,18 +319,18 @@ class DataManager:
         self.center_skills = {}
         c_skills = self.load_yaml_file("CenterSkills.yaml") or []
         for s in c_skills:
-            sid = s['CenterSkillSeriesId']
+            sid = s["CenterSkillSeriesId"]
             if sid not in self.center_skills:
                 self.center_skills[sid] = []
             self.center_skills[sid].append(s)
         for sid in self.center_skills:
-            self.center_skills[sid].sort(key=lambda x: x['SkillLevel'])
+            self.center_skills[sid].sort(key=lambda x: x["SkillLevel"])
 
     def _load_center_attributes(self):
         self.center_attributes = {}
         c_attrs = self.load_yaml_file("CenterAttributes.yaml") or []
         for a in c_attrs:
-            sid = a['CenterAttributeSeriesId']
+            sid = a["CenterAttributeSeriesId"]
             if sid not in self.center_attributes:
                 self.center_attributes[sid] = []
             self.center_attributes[sid].append(a)
@@ -318,35 +339,43 @@ class DataManager:
         self.rhythm_skills = {}
         r_skills = self.load_yaml_file("RhythmGameSkills.yaml") or []
         for s in r_skills:
-            sid = s['RhythmGameSkillSeriesId']
+            sid = s["RhythmGameSkillSeriesId"]
             if sid not in self.rhythm_skills:
                 self.rhythm_skills[sid] = []
             self.rhythm_skills[sid].append(s)
         for sid in self.rhythm_skills:
-            self.rhythm_skills[sid].sort(key=lambda x: x['SkillLevel'])
+            self.rhythm_skills[sid].sort(key=lambda x: x["SkillLevel"])
 
     def _load_token_skill_map(self):
         self.token_skill_map = {}
         details = self.load_yaml_file("CardSkillEffectDetails.yaml") or []
         for d in details:
-            if d.get('SkillEffectDetailType') == 'TOKEN_CARD_SKILL_CARD_SKILL_SERIES_ID':
-                d_id = str(d['Id'])
+            if (
+                d.get("SkillEffectDetailType")
+                == "TOKEN_CARD_SKILL_CARD_SKILL_SERIES_ID"
+            ):
+                d_id = str(d["Id"])
                 prefix = d_id[:-1]
-                self.token_skill_map[prefix] = d['EffectValue']
+                self.token_skill_map[prefix] = d["EffectValue"]
 
     def _load_card_evolution_materials(self):
-        self.card_evolution_materials = {m['Id']: m for m in (self.load_yaml_file("CardEvolutionMaterials.yaml") or [])}
+        self.card_evolution_materials = {
+            m["Id"]: m
+            for m in (self.load_yaml_file("CardEvolutionMaterials.yaml") or [])
+        }
 
     def _load_card_skill_levelup_materials(self):
         self.card_skill_levelup_materials = {}
         mats = self.load_yaml_file("CardSkillLevelUpMaterials.yaml") or []
         for m in mats:
-            sid = m['CardSeriesId']
+            sid = m["CardSeriesId"]
             if sid not in self.card_skill_levelup_materials:
                 self.card_skill_levelup_materials[sid] = []
             self.card_skill_levelup_materials[sid].append(m)
         for sid in self.card_skill_levelup_materials:
-            self.card_skill_levelup_materials[sid].sort(key=lambda x: (x.get('SkillType', 0), x.get('SkillLevel', 0)))
+            self.card_skill_levelup_materials[sid].sort(
+                key=lambda x: (x.get("SkillType", 0), x.get("SkillLevel", 0))
+            )
 
     def get_music_chart_data(self, music_id):
         # Check DB first
@@ -357,14 +386,14 @@ class DataManager:
         csv_path = os.path.join(self.cache_dir, f"musicscore_{music_id}.csv")
         if not os.path.exists(csv_path):
             return None
-        
+
         try:
-            with open(csv_path, 'r', encoding='utf-8') as f:
+            with open(csv_path, "r", encoding="utf-8") as f:
                 reader = csv.reader(f)
                 header = next(reader, None)
                 if not header:
                     return None
-                
+
                 rows = []
                 for row in reader:
                     if len(row) < 3:
@@ -378,7 +407,7 @@ class DataManager:
         sections = []
         moods = []
         end_time = 0
-        
+
         # Row format: id, song_time, key_type, key_value, heart_appear_ratio
         for row in rows:
             try:
@@ -387,7 +416,7 @@ class DataManager:
                 val = int(row[3])
             except ValueError:
                 continue
-            
+
             if k_type == 1:
                 beat_hearts.append(time)
             elif k_type == 10:
@@ -408,11 +437,11 @@ class DataManager:
         # Section 1 starts at 0.
         # Subsequent sections start at the times in `sections`.
         # Total usually 5 sections.
-        
+
         section_boundaries = [0] + sorted(sections) + [end_time]
         # Remove duplicates if 0 is already in sections (unlikely but safe)
         section_boundaries = sorted(list(set(section_boundaries)))
-        
+
         # Ensure we have at least start and end
         if len(section_boundaries) < 2:
             section_boundaries = [0, end_time]
@@ -420,83 +449,96 @@ class DataManager:
         chart_sections = []
         for i in range(len(section_boundaries) - 1):
             start = section_boundaries[i]
-            end = section_boundaries[i+1]
+            end = section_boundaries[i + 1]
             duration = end - start
-            
+
             # Count beats in this section
             count = sum(1 for t in beat_hearts if start <= t < end)
-            
-            chart_sections.append({
-                "index": i + 1,
-                "start_time": start,
-                "end_time": end,
-                "duration": duration,
-                "duration_sec": round(duration / 1000, 1),
-                "beat_count": count,
-                "percentage": (duration / end_time * 100) if end_time > 0 else 0
-            })
+
+            chart_sections.append(
+                {
+                    "index": i + 1,
+                    "start_time": start,
+                    "end_time": end,
+                    "duration": duration,
+                    "duration_sec": round(duration / 1000, 1),
+                    "beat_count": count,
+                    "percentage": (duration / end_time * 100) if end_time > 0 else 0,
+                }
+            )
 
         # Calculate Mood Line
         # Mood value changes at specific times. We want to sample or list these points.
         # Initial mood is 0 at time 0.
         # The points should be normalized to percentage for CSS plotting.
-        
+
         mood_points = []
         # Add start point
-        mood_points.append({"time": 0, "value": 0}) 
-        
-        sorted_moods = sorted(moods, key=lambda x: x['time'])
-        
+        mood_points.append({"time": 0, "value": 0})
+
+        sorted_moods = sorted(moods, key=lambda x: x["time"])
+
         for m in sorted_moods:
-            t = m['time']
-            val = m['value']
+            t = m["time"]
+            val = m["value"]
             # Step function: mood stays at previous value until 't', then jumps to 'val'
             if mood_points:
                 prev = mood_points[-1]
-                if prev['time'] < t:
-                    mood_points.append({"time": t, "value": prev['value']}) # Point before jump
-            mood_points.append({"time": t, "value": val}) # Jump to new value
-            
+                if prev["time"] < t:
+                    mood_points.append(
+                        {"time": t, "value": prev["value"]}
+                    )  # Point before jump
+            mood_points.append({"time": t, "value": val})  # Jump to new value
+
         # Add end point
-        if end_time > mood_points[-1]['time']:
-            mood_points.append({"time": end_time, "value": mood_points[-1]['value']})
-            
+        if end_time > mood_points[-1]["time"]:
+            mood_points.append({"time": end_time, "value": mood_points[-1]["value"]})
+
         # Normalize Y
-        max_val = max((p['value'] for p in mood_points), default=100)
-        min_val = min((p['value'] for p in mood_points), default=-100)
+        max_val = max((p["value"] for p in mood_points), default=100)
+        min_val = min((p["value"] for p in mood_points), default=-100)
         abs_max = max(abs(max_val), abs(min_val))
-        if abs_max == 0: abs_max = 100
-        
+        if abs_max == 0:
+            abs_max = 100
+
         final_points = []
         for p in mood_points:
-            x_pct = (p['time'] / end_time * 100) if end_time > 0 else 0
+            x_pct = (p["time"] / end_time * 100) if end_time > 0 else 0
             # 50% is center (0). +abs_max -> 10% (top). -abs_max -> 90% (bottom).
             # Range is 80% (from 10% to 90%).
-            y_pct = 50 - (p['value'] / abs_max * 40)
-            final_points.append({
-                "x": round(x_pct, 2),
-                "y": round(y_pct, 2),
-                "val": p['value']
-            })
+            y_pct = 50 - (p["value"] / abs_max * 40)
+            final_points.append(
+                {"x": round(x_pct, 2), "y": round(y_pct, 2), "val": p["value"]}
+            )
 
         result = {
             "total_time": end_time,
             "total_time_sec": round(end_time / 1000, 1),
             "total_beats": len(beat_hearts),
             "sections": chart_sections,
-            "moods": final_points
+            "moods": final_points,
         }
-        
+
         # Save to DB
         self.store.save_music_chart(music_id, result)
-        
+
         return result
 
     def get_character_id_by_name(self, name):
         self._ensure("characters")
         target = name.replace(" ", "").lower()
         for char_id, char_data in self.characters.items():
-            names = [(char_data.get('NameFirst') or "").replace(" ", "").lower(), (char_data.get('NameLast') or "").replace(" ", "").lower(), ((char_data.get('NameLast') or "") + (char_data.get('NameFirst') or "")).replace(" ", "").lower(), (char_data.get('LatinAlphabetNameFirst') or "").replace(" ", "").lower(), (char_data.get('LatinAlphabetNameLast') or "").replace(" ", "").lower()]
+            names = [
+                (char_data.get("NameFirst") or "").replace(" ", "").lower(),
+                (char_data.get("NameLast") or "").replace(" ", "").lower(),
+                ((char_data.get("NameLast") or "") + (char_data.get("NameFirst") or ""))
+                .replace(" ", "")
+                .lower(),
+                (char_data.get("LatinAlphabetNameFirst") or "")
+                .replace(" ", "")
+                .lower(),
+                (char_data.get("LatinAlphabetNameLast") or "").replace(" ", "").lower(),
+            ]
             if target in names or str(char_id) == target:
                 return char_id
         return None
@@ -513,18 +555,18 @@ class DataManager:
         self._ensure("characters")
         char = self.characters.get(char_id)
         if char:
-            last, first = char.get('NameLast', ''), char.get('NameFirst', '')
+            last, first = char.get("NameLast", ""), char.get("NameFirst", "")
             if last or first:
                 return f"{last}{first}".strip()
-            return char.get('DisplayFullName') or str(char_id)
+            return char.get("DisplayFullName") or str(char_id)
         return str(char_id)
 
     def get_generation_str(self, char_id):
         self._ensure("characters")
         char = self.characters.get(char_id)
-        if not char or char.get('GenerationsId') == 100:
+        if not char or char.get("GenerationsId") == 100:
             return ""
-        gen_val = char.get('DisplayGeneration') or char.get('GenerationsId')
+        gen_val = char.get("DisplayGeneration") or char.get("GenerationsId")
         return str(gen_val) + "期"
 
     def get_character_unit(self, char_id):
@@ -541,8 +583,8 @@ class DataManager:
         for item_id, rank in gifts:
             item = self.items.get(item_id)
             if item:
-                results.append({"name": item.get('Name'), "rank": rank, "id": item_id})
-        results.sort(key=lambda x: x['rank'], reverse=True)
+                results.append({"name": item.get("Name"), "rank": rank, "id": item_id})
+        results.sort(key=lambda x: x["rank"], reverse=True)
         return results
 
     def get_rarity_name(self, rarity_id):
@@ -551,11 +593,17 @@ class DataManager:
 
     def get_card_series_data(self, series_id):
         self._ensure("card_datas")
-        return sorted([c for c in self.card_datas if c.get('CardSeriesId') == series_id], key=lambda x: x['Id'])
+        return sorted(
+            [c for c in self.card_datas if c.get("CardSeriesId") == series_id],
+            key=lambda x: x["Id"],
+        )
 
     def get_cards_by_character(self, char_id):
         self._ensure("card_datas")
-        return sorted([c for c in self.card_datas if c.get('CharactersId') == char_id], key=lambda x: x['Id'])
+        return sorted(
+            [c for c in self.card_datas if c.get("CharactersId") == char_id],
+            key=lambda x: x["Id"],
+        )
 
     def get_all_card_datas(self):
         self._ensure("card_datas")
@@ -582,27 +630,31 @@ class DataManager:
         results = []
         for g in self.gachas:
             for i in range(1, 15):
-                field = f'PickUpCardSeriesId_{i}'
+                field = f"PickUpCardSeriesId_{i}"
                 if g.get(field) == series_id:
-                    results.append({
-                        "name": g['GachaSeriesName'],
-                        "start_time": g.get("StartTime"),
-                        "end_time": g.get("EndTime")
-                    })
+                    results.append(
+                        {
+                            "name": g["GachaSeriesName"],
+                            "start_time": g.get("StartTime"),
+                            "end_time": g.get("EndTime"),
+                        }
+                    )
                     break
         results.sort(key=lambda x: x["start_time"] or 0)
         return results
 
     def get_costume_models_by_character(self, char_id):
         self._ensure("costume_models", "costumes")
-        models = [m for m in self.costume_models if m.get('CharactersId') == char_id]
+        models = [m for m in self.costume_models if m.get("CharactersId") == char_id]
         grouped = {}
         for m in models:
-            costume_id = m.get('CostumesId')
-            costume_label = (self.costumes.get(costume_id) or {}).get('Label') or f"CostumesId {costume_id}"
+            costume_id = m.get("CostumesId")
+            costume_label = (self.costumes.get(costume_id) or {}).get(
+                "Label"
+            ) or f"CostumesId {costume_id}"
             if costume_label not in grouped:
                 grouped[costume_label] = []
-            model_label = m.get('Label')
+            model_label = m.get("Label")
             if model_label and model_label not in grouped[costume_label]:
                 grouped[costume_label].append(model_label)
         for label in grouped:
@@ -630,7 +682,7 @@ class DataManager:
             values = [raw]
         else:
             text = str(raw)
-            values = [p for p in re.split(r'[,\s]+', text.strip()) if p]
+            values = [p for p in re.split(r"[,\s]+", text.strip()) if p]
         result = []
         for v in values:
             try:
@@ -642,10 +694,10 @@ class DataManager:
     def _load_card_duet_voices(self):
         entries = self.load_yaml_file("CardDuetVoice.yaml") or []
         for entry in entries:
-            series_id = entry.get('CardSeriesId')
+            series_id = entry.get("CardSeriesId")
             if series_id is None:
                 continue
-            raw_ids = entry.get('CharacterIds')
+            raw_ids = entry.get("CharacterIds")
             ids = self._normalize_character_ids(raw_ids)
             if ids:
                 self.card_duet_voices[series_id] = ids
@@ -653,25 +705,31 @@ class DataManager:
     def _load_style_voices(self):
         entries = self.load_yaml_file("StyleVoices.yaml") or []
         for entry in entries:
-            series_id = entry.get('CardSeriesId')
+            series_id = entry.get("CardSeriesId")
             if series_id is None:
                 continue
-            name = entry.get('Name')
-            voice_name = entry.get('VoiceName')
+            name = entry.get("Name")
+            voice_name = entry.get("VoiceName")
             if not name or not voice_name:
                 continue
             if series_id not in self.style_voice_entries:
                 self.style_voice_entries[series_id] = []
             entry_key = (name, voice_name)
-            if entry_key not in [(e["name"], e["voice"]) for e in self.style_voice_entries[series_id]]:
-                self.style_voice_entries[series_id].append({"name": name, "voice": voice_name})
+            if entry_key not in [
+                (e["name"], e["voice"]) for e in self.style_voice_entries[series_id]
+            ]:
+                self.style_voice_entries[series_id].append(
+                    {"name": name, "voice": voice_name}
+                )
         for series_id in self.style_voice_entries:
-            self.style_voice_entries[series_id].sort(key=lambda x: (x["name"], x["voice"]))
+            self.style_voice_entries[series_id].sort(
+                key=lambda x: (x["name"], x["voice"])
+            )
 
     def _load_style_movies(self):
         entries = self.load_yaml_file("StyleMovies.yaml") or []
         for entry in entries:
-            series_id = entry.get('CardSeriesId')
+            series_id = entry.get("CardSeriesId")
             if series_id is None:
                 continue
             self.style_movie_series.add(series_id)
@@ -679,7 +737,9 @@ class DataManager:
     def _load_comics(self):
         entries = self.load_yaml_file("Comics.yaml") or []
         for entry in entries:
-            appearance_ids = self._normalize_character_ids(entry.get('AppearanceCharacterIds'))
+            appearance_ids = self._normalize_character_ids(
+                entry.get("AppearanceCharacterIds")
+            )
             entry["AppearanceCharacterIds"] = appearance_ids
             self.comics.append(entry)
 
@@ -713,8 +773,12 @@ class DataManager:
     def _load_musics(self):
         entries = self.load_yaml_file("Musics.yaml") or []
         for entry in entries:
-            entry["SingerCharacterId"] = self._normalize_character_ids(entry.get("SingerCharacterId"))
-            entry["SupportCharacterId"] = self._normalize_character_ids(entry.get("SupportCharacterId"))
+            entry["SingerCharacterId"] = self._normalize_character_ids(
+                entry.get("SingerCharacterId")
+            )
+            entry["SupportCharacterId"] = self._normalize_character_ids(
+                entry.get("SupportCharacterId")
+            )
             self.musics.append(entry)
             song_type = entry.get("SongType")
             desc = entry.get("Description")
@@ -796,7 +860,9 @@ class DataManager:
 
     def get_quest_live_section_name(self, stage_entry):
         self._ensure("standard_quest_areas")
-        area_name = self.get_standard_quest_area_name(stage_entry.get("StandardQuestAreasId"))
+        area_name = self.get_standard_quest_area_name(
+            stage_entry.get("StandardQuestAreasId")
+        )
         stage_name = stage_entry.get("Name")
         if area_name:
             base = area_name
@@ -820,7 +886,11 @@ class DataManager:
             series_id = stage_entry.get("GradeQuestSeriesId")
         series = self.grade_quest_series.get(series_id) if series_id else None
         series_name = series.get("Name") if series else None
-        season_name = self.get_grade_quest_season_name(series.get("GradeQuestSeasonId")) if series else None
+        season_name = (
+            self.get_grade_quest_season_name(series.get("GradeQuestSeasonId"))
+            if series
+            else None
+        )
         if season_name and series_name:
             return f"{season_name} {series_name}"
         if series_name:
@@ -851,13 +921,21 @@ class DataManager:
             if not section_skill:
                 continue
             effect_ids = section_skill.get("effect_ids", [])
-            effect_ids.sort(key=lambda x: (self.section_skill_effects.get(x, {}).get("OrderId", 0), x))
-            results.append({
-                "section_no": section.get("SectionNo"),
-                "description": section_skill.get("Description") or f"SectionSkill {section_skill_id}",
-                "effect_ids": effect_ids,
-                "skill_icon": section_skill.get("SkillIcon"),
-            })
+            effect_ids.sort(
+                key=lambda x: (
+                    self.section_skill_effects.get(x, {}).get("OrderId", 0),
+                    x,
+                )
+            )
+            results.append(
+                {
+                    "section_no": section.get("SectionNo"),
+                    "description": section_skill.get("Description")
+                    or f"SectionSkill {section_skill_id}",
+                    "effect_ids": effect_ids,
+                    "skill_icon": section_skill.get("SkillIcon"),
+                }
+            )
         results.sort(key=lambda x: x["section_no"])
         return results
 
@@ -878,15 +956,17 @@ class DataManager:
             effect = self.stage_skill_effects.get(effect_id, {})
             condition_details = self.stage_skill_condition_details.get(condition_id, [])
             effect_details = self.stage_skill_effect_details.get(effect_id, [])
-            results.append({
-                "id": set_id,
-                "condition_id": condition_id,
-                "effect_id": effect_id,
-                "condition": condition,
-                "condition_details": condition_details,
-                "effect": effect,
-                "effect_details": effect_details,
-            })
+            results.append(
+                {
+                    "id": set_id,
+                    "condition_id": condition_id,
+                    "effect_id": effect_id,
+                    "condition": condition,
+                    "condition_details": condition_details,
+                    "effect": effect,
+                    "effect_details": effect_details,
+                }
+            )
         return results
 
     def get_music_mastery(self, music_id):
@@ -915,7 +995,9 @@ class DataManager:
                 self.learning_stages_by_music[music_id] = []
             self.learning_stages_by_music[music_id].append(entry)
         for music_id in self.learning_stages_by_music:
-            self.learning_stages_by_music[music_id].sort(key=lambda x: x.get("QuestLevel") or 0)
+            self.learning_stages_by_music[music_id].sort(
+                key=lambda x: x.get("QuestLevel") or 0
+            )
 
     def _load_quest_live_stages(self):
         entries = self.load_yaml_file("StandardQuestStages.yaml") or []
@@ -927,7 +1009,9 @@ class DataManager:
                 self.quest_live_stages_by_music[music_id] = []
             self.quest_live_stages_by_music[music_id].append(entry)
         for music_id in self.quest_live_stages_by_music:
-            self.quest_live_stages_by_music[music_id].sort(key=lambda x: x.get("QuestLevel") or 0)
+            self.quest_live_stages_by_music[music_id].sort(
+                key=lambda x: x.get("QuestLevel") or 0
+            )
 
     def _load_grade_live_stages(self):
         entries = self.load_yaml_file("GradeQuestStages.yaml") or []
@@ -939,7 +1023,9 @@ class DataManager:
                 self.grade_live_stages_by_music[music_id] = []
             self.grade_live_stages_by_music[music_id].append(entry)
         for music_id in self.grade_live_stages_by_music:
-            self.grade_live_stages_by_music[music_id].sort(key=lambda x: x.get("LivePoint") or 0)
+            self.grade_live_stages_by_music[music_id].sort(
+                key=lambda x: x.get("LivePoint") or 0
+            )
 
     def _load_grand_prix_stages(self):
         entries = self.load_yaml_file("GrandPrixQuestStages.yaml") or []
@@ -951,7 +1037,9 @@ class DataManager:
                 self.grand_prix_stages_by_music[music_id] = []
             self.grand_prix_stages_by_music[music_id].append(entry)
         for music_id in self.grand_prix_stages_by_music:
-            self.grand_prix_stages_by_music[music_id].sort(key=lambda x: x.get("QuestLevel") or 0)
+            self.grand_prix_stages_by_music[music_id].sort(
+                key=lambda x: x.get("QuestLevel") or 0
+            )
 
     def _load_live_stages(self):
         entries = self.load_yaml_file("LiveStages.yaml") or []
@@ -959,7 +1047,9 @@ class DataManager:
             stage_id = entry.get("Id")
             if stage_id is None:
                 continue
-            entry["StageSkillSetIds"] = self._normalize_character_ids(entry.get("StageSkillSetIds"))
+            entry["StageSkillSetIds"] = self._normalize_character_ids(
+                entry.get("StageSkillSetIds")
+            )
             self.live_stages[stage_id] = entry
 
     def _load_standard_quest_areas(self):
@@ -1026,7 +1116,9 @@ class DataManager:
             effect_id = entry.get("Id")
             if effect_id is None:
                 continue
-            effect_key = int(str(effect_id)[:-1]) if len(str(effect_id)) > 1 else effect_id
+            effect_key = (
+                int(str(effect_id)[:-1]) if len(str(effect_id)) > 1 else effect_id
+            )
             if effect_key not in self.section_skill_effect_details:
                 self.section_skill_effect_details[effect_key] = []
             self.section_skill_effect_details[effect_key].append(entry)
@@ -1041,7 +1133,9 @@ class DataManager:
                 self.quest_sections_by_stage[stage_id] = []
             self.quest_sections_by_stage[stage_id].append(entry)
         for stage_id in self.quest_sections_by_stage:
-            self.quest_sections_by_stage[stage_id].sort(key=lambda x: x.get("SectionNo") or 0)
+            self.quest_sections_by_stage[stage_id].sort(
+                key=lambda x: x.get("SectionNo") or 0
+            )
 
     def _normalize_id_list(self, raw):
         if raw is None:
@@ -1052,7 +1146,7 @@ class DataManager:
             values = [raw]
         else:
             text = str(raw)
-            values = [p for p in re.split(r'[,\s]+', text.strip()) if p]
+            values = [p for p in re.split(r"[,\s]+", text.strip()) if p]
         result = []
         for v in values:
             try:
@@ -1076,7 +1170,9 @@ class DataManager:
                 continue
             self.stage_skill_conditions[condition_id] = entry
 
-        condition_detail_entries = self.load_yaml_file("StageSkillConditionDetails.yaml") or []
+        condition_detail_entries = (
+            self.load_yaml_file("StageSkillConditionDetails.yaml") or []
+        )
         for entry in condition_detail_entries:
             condition_id = entry.get("StageSkillConditionId")
             if condition_id is None:
@@ -1092,7 +1188,9 @@ class DataManager:
                 continue
             self.stage_skill_effects[effect_id] = entry
 
-        effect_detail_entries = self.load_yaml_file("StageSkillEffectDetails.yaml") or []
+        effect_detail_entries = (
+            self.load_yaml_file("StageSkillEffectDetails.yaml") or []
+        )
         for entry in effect_detail_entries:
             effect_id = entry.get("StageSkillEffectId")
             if effect_id is None:
@@ -1102,9 +1200,13 @@ class DataManager:
             self.stage_skill_effect_details[effect_id].append(entry)
 
         for condition_id in self.stage_skill_condition_details:
-            self.stage_skill_condition_details[condition_id].sort(key=lambda x: x.get("Id") or 0)
+            self.stage_skill_condition_details[condition_id].sort(
+                key=lambda x: x.get("Id") or 0
+            )
         for effect_id in self.stage_skill_effect_details:
-            self.stage_skill_effect_details[effect_id].sort(key=lambda x: x.get("Id") or 0)
+            self.stage_skill_effect_details[effect_id].sort(
+                key=lambda x: x.get("Id") or 0
+            )
 
     def _load_music_mastery(self):
         skill_entries = self.load_yaml_file("MusicMasterySkill.yaml") or []
@@ -1167,19 +1269,21 @@ class DataManager:
             return self.music_mastery_bonus_love.get(level)
         return None
 
-    def get_merged_skill_desc(self, series_dict, key='skills'):
+    def get_merged_skill_desc(self, series_dict, key="skills"):
         self._ensure("token_skill_map")
         if not series_dict or not series_dict.get(key):
             return None
         skills = series_dict[key]
-        first_desc = skills[0]['Description']
-        has_placeholders = '$' in first_desc
-        template = re.sub(r'\$.*?\$', '{}', first_desc) if has_placeholders else first_desc
+        first_desc = skills[0]["Description"]
+        has_placeholders = "$" in first_desc
+        template = (
+            re.sub(r"\$.*?\$", "{}", first_desc) if has_placeholders else first_desc
+        )
 
         level_to_vals = {}
         for s in skills:
-            lv = s['SkillLevel']
-            vals = re.findall(r'\$(.*?)\$', s['Description'])
+            lv = s["SkillLevel"]
+            vals = re.findall(r"\$(.*?)\$", s["Description"])
             val_str = "/".join(vals)
             if lv not in level_to_vals:
                 level_to_vals[lv] = set()
@@ -1189,25 +1293,34 @@ class DataManager:
         if has_placeholders:
             sorted_lvs = sorted(level_to_vals.keys())
             if not sorted_lvs:
-                return {"name": series_dict['name'], "template": template, "ranges": []}
+                return {"name": series_dict["name"], "template": template, "ranges": []}
             curr_start = sorted_lvs[0]
             curr_val = " & ".join(sorted(list(level_to_vals[curr_start])))
             for i in range(1, len(sorted_lvs)):
                 lv = sorted_lvs[i]
                 val = " & ".join(sorted(list(level_to_vals[lv])))
                 if val != curr_val:
-                    ranges.append((curr_start, sorted_lvs[i-1], curr_val))
+                    ranges.append((curr_start, sorted_lvs[i - 1], curr_val))
                     curr_start, curr_val = lv, val
             ranges.append((curr_start, sorted_lvs[-1], curr_val))
 
         token_skill_series_id = None
         for s in skills:
-            eff_id = str(s.get('CardSkillEffectId'))
+            eff_id = str(s.get("CardSkillEffectId"))
             if eff_id in self.token_skill_map:
                 token_skill_series_id = self.token_skill_map[eff_id]
                 break
-        token_info = self.get_all_skills_data(token_skill_series_id) if token_skill_series_id else None
-        return {"name": series_dict['name'], "template": template, "ranges": ranges, "token": token_info}
+        token_info = (
+            self.get_all_skills_data(token_skill_series_id)
+            if token_skill_series_id
+            else None
+        )
+        return {
+            "name": series_dict["name"],
+            "template": template,
+            "ranges": ranges,
+            "token": token_info,
+        }
 
     def get_all_skills_data(self, skill_series_id):
         self._ensure("skill_series", "skills")
@@ -1216,10 +1329,10 @@ class DataManager:
             return None
         return {
             "id": skill_series_id,
-            "name": series.get('Name'),
-            "icon_id": series.get('SkillIcon'),
-            "main_effect": series.get('SkillMainEffect'),
-            "skills": self.skills.get(skill_series_id, [])
+            "name": series.get("Name"),
+            "icon_id": series.get("SkillIcon"),
+            "main_effect": series.get("SkillMainEffect"),
+            "skills": self.skills.get(skill_series_id, []),
         }
 
     def get_all_center_skills_data(self, series_id):
@@ -1227,16 +1340,26 @@ class DataManager:
         skills = self.center_skills.get(series_id, [])
         if not skills:
             return None
-        return {"id": series_id, "name": skills[0].get('CenterSkillName'), "skills": skills}
+        return {
+            "id": series_id,
+            "name": skills[0].get("CenterSkillName"),
+            "skills": skills,
+        }
 
     def get_all_rhythm_skills_data(self, series_id):
         self._ensure("rhythm_skills")
         skills = self.rhythm_skills.get(series_id, [])
         if not skills:
             return None
-        return {"id": series_id, "name": skills[0].get('RhythmGameSkillName'), "skills": skills}
+        return {
+            "id": series_id,
+            "name": skills[0].get("RhythmGameSkillName"),
+            "skills": skills,
+        }
 
-    def get_cost_transition(self, series_id, skill_series_field, skill_source_dict, cost_field='SkillCost'):
+    def get_cost_transition(
+        self, series_id, skill_series_field, skill_source_dict, cost_field="SkillCost"
+    ):
         self._ensure("card_datas")
         costs = []
         cards = self.get_card_series_data(series_id)
@@ -1251,7 +1374,7 @@ class DataManager:
         if costs:
             unique_path.append(costs[0])
             for i in range(1, len(costs)):
-                if costs[i] != costs[i-1]:
+                if costs[i] != costs[i - 1]:
                     unique_path.append(costs[i])
         return " -> ".join(unique_path)
 
@@ -1262,21 +1385,23 @@ class DataManager:
             "half": f"image_card_half_{card_id}.png",
             "middle_vertical": f"image_card_middle_vertical_{card_id}.png",
             "deck_frame_chara": f"image_deck_frame_chara_{series_id}.png",
-            "prof_custom": f"image_prof_custom_{card_id}.png"
+            "prof_custom": f"image_prof_custom_{card_id}.png",
         }
 
     def get_skill_icons(self, s_id, sa_id, attr_id=None):
         icons = {}
         s_data = self.get_all_skills_data(s_id)
-        if s_data and s_data['icon_id']:
+        if s_data and s_data["icon_id"]:
             icons["skill_icon"] = f"icon_skill_{s_data['icon_id']}.png"
         sa_data = self.get_all_skills_data(sa_id)
-        if sa_data and sa_data['icon_id']:
+        if sa_data and sa_data["icon_id"]:
             icons["special_appeal_icon"] = f"icon_skill_{sa_data['icon_id']}.png"
         if attr_id:
             attr_data = self.get_all_skills_data(attr_id)
-            if attr_data and attr_data['icon_id']:
-                icons["special_attribute_icon"] = f"icon_skill_{attr_data['icon_id']}.png"
+            if attr_data and attr_data["icon_id"]:
+                icons["special_attribute_icon"] = (
+                    f"icon_skill_{attr_data['icon_id']}.png"
+                )
         return icons
 
     def get_card_evolution_materials(self, card_id):
@@ -1318,9 +1443,11 @@ class DataManager:
                         name = item.get("Name") if item else str(item_id)
                         mats.append({"name": name, "count": num})
             if mats:
-                result.append({
-                    "type": entry.get("SkillType"),
-                    "level": entry.get("SkillLevel"),
-                    "materials": mats
-                })
+                result.append(
+                    {
+                        "type": entry.get("SkillType"),
+                        "level": entry.get("SkillLevel"),
+                        "materials": mats,
+                    }
+                )
         return result
