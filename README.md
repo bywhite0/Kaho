@@ -12,7 +12,7 @@ A NoneBot2-based bot for Link! Like! LoveLive! (Hasu no sora Jogakuin School Ido
 
 ## Requirements
 
-- Python 3.11 or higher.
+- Python 3.9 or higher.
 - A self-hosted [AstrBot Text2Image Service](https://github.com/AstrBotDevs/astrbot-t2i-service) for high-quality HTML rendering (optional but recommended). For more information, see [this page](https://docs.astrbot.app/en/others/self-host-t2i.html).
 
 ## Installation and Usage
@@ -22,19 +22,19 @@ A NoneBot2-based bot for Link! Like! LoveLive! (Hasu no sora Jogakuin School Ido
 2. Configure your NoneBot2 environment in `.env` or `.env.prod`.
 3. Ensure the required directories are populated with the game data files.
 4. Set up the asset directories (e.g., exports, assets) for images and icons.
-5. Set the T2I_SERVICE_URL in your environment variables.
+5. Set the `T2I_SERVICE_URL` in your environment variables.
 6. Run the bot using `uv run python bot.py`.
 
 ## Commands
 
-- /list: Display a list of characters.
-- /card [ID]: Search for specific card details.
-- /find [Name/ID]: Show all cards of a specific character.
-- /search [Query]: Search for cards by keywords.
-- /chara [Name/ID]: Display member profile and information.
-- /music [Title/ID]: Search for song and stage details.
-- /comic [Query]: Browse and search for in-game comics.
-- /dbrebuild: Rebuild the local game database (Superuser only).
+- `/list`: Display a list of characters.
+- `/card [ID]`: Search for specific card details.
+- `/find [Name/ID]`: Show all cards of a specific character.
+- `/search [Query]`: Search for cards by keywords.
+- `/chara [Name/ID]`: Display member profile and information.
+- `/music [Title/ID]`: Search for song and stage details.
+- `/comic [Query]`: Browse and search for in-game comics.
+- `/dbrebuild`: Rebuild the local game database (Superuser only).
 
 ## License
 
