@@ -799,7 +799,7 @@ class DataManager:
         results = []
         if query == "":
             return results
-        if query.isdigit():
+        if query.isdigit() and len(query) > 5:
             target_id = int(query)
             for entry in self.musics:
                 if entry.get("Id") == target_id:
