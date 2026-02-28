@@ -1,48 +1,81 @@
-
 import os
 import httpx
 import jinja2
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
-from typing import Optional, Dict, Any
+from typing import Dict, Any
+
 
 class T2IService:
     def __init__(self):
         self.service_url = os.getenv("T2I_SERVICE_URL", "http://localhost:8999")
-        self.method = os.getenv("T2I_METHOD", "t2i-service") # "t2i-service" or "pillow"
-        
+        self.method = os.getenv(
+            "T2I_METHOD", "t2i-service"
+        )  # "t2i-service" or "pillow"
+
         # Setup Jinja2 environment
-        template_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "templates")
+        template_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "templates"
+        )
         self.env = jinja2.Environment(
             loader=jinja2.FileSystemLoader(template_dir),
-            autoescape=jinja2.select_autoescape(['html', 'xml'])
+            autoescape=jinja2.select_autoescape(["html", "xml"]),
         )
-        
+
         # Project root for resolving relative paths
-        self.project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-        
+        self.project_root = os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        )
+
         # Load environment config
-        self.icon_base_url = self._resolve_path(os.getenv("ICON_BASE_URL", "exports/icons/skill"))
-        self.assets_icon_url = self._resolve_path(os.getenv("ASSETS_ICON_URL", "assets/icons"))
-             
+        self.icon_base_url = self._resolve_path(
+            os.getenv("ICON_BASE_URL", "exports/icons/skill")
+        )
+        self.assets_icon_url = self._resolve_path(
+            os.getenv("ASSETS_ICON_URL", "assets/icons")
+        )
+
         # Inject global config
-        self.env.globals['config'] = {
-            'ASSETS_ICON_URL': self.assets_icon_url,
-            'ICON_BASE_URL': self.icon_base_url,
-            'ICON_SECTION_URL': self._resolve_path(os.getenv("ICON_SECTION_URL", "exports/icons/section")),
-            'ICON_ITEM_URL': self._resolve_path(os.getenv("ICON_ITEM_URL", "exports/icons/item")),
-            'IMG_MUSIC_THUMBNAIL_URL': self._resolve_path(os.getenv("IMG_MUSIC_THUMBNAIL_URL", "exports/images/music/thumbnail")),
-            'IMG_COMIC_THUMBNAIL_URL': self._resolve_path(os.getenv("IMG_COMIC_THUMBNAIL_URL", "exports/images/comic_thumbnail")),
-            'IMG_CARD_FULL_URL': self._resolve_path(os.getenv("IMG_CARD_FULL_URL", "exports/images/card_full")),
-            'IMG_CARD_HALF_URL': self._resolve_path(os.getenv("IMG_CARD_HALF_URL", "exports/images/card_half")),
-            'IMG_CARD_MIDDLE_VERTICAL_URL': self._resolve_path(os.getenv("IMG_CARD_MIDDLE_VERTICAL_URL", "exports/images/card_middle_vertical")),
-            'IMG_DECK_FRAME_CHARA_URL': self._resolve_path(os.getenv("IMG_DECK_FRAME_CHARA_URL", "exports/images/deck_frame_chara")),
-            'IMG_PROF_CUSTOM_URL': self._resolve_path(os.getenv("IMG_PROF_CUSTOM_URL", "exports/images/prof_custom")),
+        self.env.globals["config"] = {
+            "ASSETS_ICON_URL": self.assets_icon_url,
+            "ICON_BASE_URL": self.icon_base_url,
+            "ICON_SECTION_URL": self._resolve_path(
+                os.getenv("ICON_SECTION_URL", "exports/icons/section")
+            ),
+            "ICON_ITEM_URL": self._resolve_path(
+                os.getenv("ICON_ITEM_URL", "exports/icons/item")
+            ),
+            "IMG_MUSIC_THUMBNAIL_URL": self._resolve_path(
+                os.getenv("IMG_MUSIC_THUMBNAIL_URL", "exports/images/music/thumbnail")
+            ),
+            "IMG_COMIC_THUMBNAIL_URL": self._resolve_path(
+                os.getenv("IMG_COMIC_THUMBNAIL_URL", "exports/images/comic_thumbnail")
+            ),
+            "IMG_CARD_FULL_URL": self._resolve_path(
+                os.getenv("IMG_CARD_FULL_URL", "exports/images/card_full")
+            ),
+            "IMG_CARD_HALF_URL": self._resolve_path(
+                os.getenv("IMG_CARD_HALF_URL", "exports/images/card_half")
+            ),
+            "IMG_CARD_MIDDLE_VERTICAL_URL": self._resolve_path(
+                os.getenv(
+                    "IMG_CARD_MIDDLE_VERTICAL_URL",
+                    "exports/images/card_middle_vertical",
+                )
+            ),
+            "IMG_DECK_FRAME_CHARA_URL": self._resolve_path(
+                os.getenv("IMG_DECK_FRAME_CHARA_URL", "exports/images/deck_frame_chara")
+            ),
+            "IMG_PROF_CUSTOM_URL": self._resolve_path(
+                os.getenv("IMG_PROF_CUSTOM_URL", "exports/images/prof_custom")
+            ),
         }
-    
+
     def _resolve_path(self, path: str) -> str:
         """Resolve a relative path to an absolute file:// URL for local rendering."""
-        if path.startswith(".") or not (path.startswith("http") or path.startswith("/")):
+        if path.startswith(".") or not (
+            path.startswith("http") or path.startswith("/")
+        ):
             return "file:///" + os.path.join(self.project_root, path).replace("\\", "/")
         return path
 
@@ -59,21 +92,23 @@ class T2IService:
         else:
             return await self._generate_via_pillow(template_name, data)
 
-    async def _generate_via_service(self, template_name: str, data: Dict[str, Any]) -> bytes:
+    async def _generate_via_service(
+        self, template_name: str, data: Dict[str, Any]
+    ) -> bytes:
         template = self.env.get_template(template_name)
         rendered_html = template.render(**data)
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self.service_url}/text2img/generate",
                 json={
                     "html": rendered_html,
-                    # We can also send tmpl/tmpldata if the service supports it directly, 
+                    # We can also send tmpl/tmpldata if the service supports it directly,
                     # but rendering locally gives us more control and consistency.
                     # The service docs say "html" OR "tmpl" + "tmpldata".
                     # Let's send "html" for simplicity as we already rendered it.
                 },
-                timeout=30.0
+                timeout=30.0,
             )
             response.raise_for_status()
             # The service returns the image data directly?
@@ -85,12 +120,15 @@ class T2IService:
             # Let's assume it returns the image content unless json=True is passed.
             return response.content
 
-    async def _generate_via_pillow(self, template_name: str, data: Dict[str, Any]) -> bytes:
+    async def _generate_via_pillow(
+        self, template_name: str, data: Dict[str, Any]
+    ) -> bytes:
         # Fallback: Create a simple text image
         # We can't easily render HTML with Pillow without a browser engine.
         # So we will just dump the data as text.
-        
+
         text_content = ""
+
         # A simple recursive function to dump dict to text
         def dump_data(d, indent=0):
             text = ""
@@ -101,7 +139,11 @@ class T2IService:
                     text += " " * indent + f"{k}:\n"
                     for item in v:
                         if isinstance(item, dict):
-                            text += " " * (indent + 2) + "- \n" + dump_data(item, indent + 4)
+                            text += (
+                                " " * (indent + 2)
+                                + "- \n"
+                                + dump_data(item, indent + 4)
+                            )
                         else:
                             text += " " * (indent + 2) + f"- {item}\n"
                 else:
@@ -109,8 +151,8 @@ class T2IService:
             return text
 
         # If data has a 'text_fallback' key (which we might add), use that.
-        if 'text_fallback' in data:
-            text_content = data['text_fallback']
+        if "text_fallback" in data:
+            text_content = data["text_fallback"]
         else:
             text_content = dump_data(data)
 
@@ -118,26 +160,28 @@ class T2IService:
         img_width = 800
         font_size = 20
         # Estimate height
-        lines = text_content.split('\n')
+        lines = text_content.split("\n")
         img_height = max(100, len(lines) * (font_size + 5) + 40)
-        
-        image = Image.new('RGB', (img_width, img_height), color=(255, 255, 255))
+
+        image = Image.new("RGB", (img_width, img_height), color=(255, 255, 255))
         draw = ImageDraw.Draw(image)
-        
+
         # Load a font - try generic, then default
         try:
             font = ImageFont.truetype("arial.ttf", font_size)
         except IOError:
             font = ImageFont.load_default()
-        
+
         draw.text((20, 20), text_content, fill=(0, 0, 0), font=font)
-        
+
         buf = BytesIO()
-        image.save(buf, format='PNG')
+        image.save(buf, format="PNG")
         return buf.getvalue()
+
 
 # Singleton instance
 _t2i_instance = None
+
 
 def get_t2i_service() -> T2IService:
     global _t2i_instance

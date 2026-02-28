@@ -14,7 +14,9 @@ async def init_dm():
         return _dm
     async with _dm_lock:
         if _dm is None:
-            root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+            root_dir = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "..")
+            )
             data_dir = os.path.join(root_dir, "masterdata")
             version_path = os.path.join(root_dir, "cache", "currentVersion.txt")
             _dm = DataManager(data_dir)
@@ -27,7 +29,9 @@ def get_dm():
 
 
 def get_paths():
-    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    root_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    )
     data_dir = os.path.join(root_dir, "masterdata")
     version_path = os.path.join(root_dir, "cache", "currentVersion.txt")
     return root_dir, data_dir, version_path

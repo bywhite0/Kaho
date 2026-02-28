@@ -1,7 +1,6 @@
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
-import os
 
 from src.core.services.t2i import get_t2i_service
 from ._common import get_dm_instance
@@ -36,16 +35,20 @@ async def _(args: Message = CommandArg()):
         appearance_ids = entry.get("AppearanceCharacterIds") or []
         appearance_names = [dm.get_character_name(cid) for cid in appearance_ids]
         characters = ", ".join(appearance_names) if appearance_names else "-"
-        
-        comics.append({
-            "Id": comic_id,
-            "Name": name,
-            "tab_name": tab_name,
-            "characters": characters
-        })
+
+        comics.append(
+            {
+                "Id": comic_id,
+                "Name": name,
+                "tab_name": tab_name,
+                "characters": characters,
+            }
+        )
 
     try:
-        img_bytes = await get_t2i_service().generate_image("comic.html", {"results": comics})
+        img_bytes = await get_t2i_service().generate_image(
+            "comic.html", {"results": comics}
+        )
     except Exception as e:
         await comic_cmd.finish(f"生成图片失败: {e}")
         return

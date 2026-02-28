@@ -1,7 +1,6 @@
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
-import os
 
 from src.core.services.t2i import get_t2i_service
 from ._common import get_dm_instance
@@ -51,7 +50,7 @@ def _get_stage_info(
                 if fever_section_no is not None and len(section_effects) > 1:
                     try:
                         target = int(fever_section_no)
-                    except:
+                    except (ValueError, TypeError):
                         target = None
                     if target is not None:
                         target_index = target - 1 if target > 0 else 0
@@ -77,7 +76,7 @@ def _get_stage_info(
             )
             if stage_skill_sets:
                 for ss in stage_skill_sets:
-                    condition_details = ss["condition_details"]
+                    # condition_details = ss["condition_details"]
                     effect_details = ss["effect_details"]
                     effect_parts = []
                     for detail in effect_details:
@@ -99,7 +98,7 @@ def _format_duration(ms_value):
         minutes = total_seconds // 60
         seconds = total_seconds % 60
         return f"{minutes}:{seconds:02d}"
-    except:
+    except (ValueError, TypeError):
         return str(ms_value)
 
 
@@ -113,7 +112,6 @@ async def _(args: Message = CommandArg()):
         return
 
     musics_data = []
-    cwd = os.getcwd()
     for entry in results:
         music_id = entry.get("Id")
 

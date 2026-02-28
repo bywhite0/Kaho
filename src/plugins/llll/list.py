@@ -14,14 +14,18 @@ async def _():
     characters = []
     for char_id in sorted(dm.get_character_ids()):
         gen = dm.get_generation_str(char_id)
-        characters.append({
-            "id": char_id,
-            "name": dm.get_character_name(char_id),
-            "generation": f"（{gen}）" if gen else ""
-        })
+        characters.append(
+            {
+                "id": char_id,
+                "name": dm.get_character_name(char_id),
+                "generation": f"（{gen}）" if gen else "",
+            }
+        )
 
     try:
-        img_bytes = await get_t2i_service().generate_image("list.html", {"characters": characters})
+        img_bytes = await get_t2i_service().generate_image(
+            "list.html", {"characters": characters}
+        )
     except Exception as e:
         await list_cmd.finish(f"生成图片失败: {e}")
         return

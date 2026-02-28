@@ -4,12 +4,15 @@ import os
 import sqlite3
 
 import yaml
+
 try:
     from nonebot import logger
 except ImportError:
     import logging
+
     logger = logging.getLogger("DataStore")
     logging.basicConfig(level=logging.INFO)
+
 
 class DataStore:
     def __init__(self, data_dir):
@@ -24,6 +27,7 @@ class DataStore:
         base_dir = None
         try:
             from nonebot_plugin_localstore import get_data_dir
+
             base_dir = str(get_data_dir("llll"))
         except Exception:
             base_dir = os.path.join(os.getcwd(), "localstore", "llll")
@@ -53,7 +57,9 @@ class DataStore:
             )
             # Migrate: add file_hash column if not exists
             try:
-                conn.execute("ALTER TABLE yaml_cache ADD COLUMN file_hash TEXT DEFAULT ''")
+                conn.execute(
+                    "ALTER TABLE yaml_cache ADD COLUMN file_hash TEXT DEFAULT ''"
+                )
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
@@ -64,7 +70,7 @@ class DataStore:
                 "INSERT OR REPLACE INTO music_charts (music_id, data_json) VALUES (?, ?)",
                 (music_id, data_json),
             )
-            
+
     def get_music_chart(self, music_id):
         with self._connect() as conn:
             row = conn.execute(
@@ -193,7 +199,8 @@ class DataStore:
     def _sync_yaml_rows(self, sanitizer=None):
         total_inserted = 0
         yaml_files = [
-            f for f in os.listdir(self.data_dir)
+            f
+            for f in os.listdir(self.data_dir)
             if f.lower().endswith((".yaml", ".yml"))
         ]
         conn = self._connect()
@@ -222,7 +229,13 @@ class DataStore:
                 for entry_id, entry in rows:
                     if max_id is not None and entry_id <= max_id:
                         continue
-                    new_rows.append((filename, entry_id, json.dumps(entry, ensure_ascii=False, default=str)))
+                    new_rows.append(
+                        (
+                            filename,
+                            entry_id,
+                            json.dumps(entry, ensure_ascii=False, default=str),
+                        )
+                    )
                 if new_rows:
                     conn.executemany(
                         "INSERT OR IGNORE INTO yaml_rows (filename, id, data_json) VALUES (?, ?, ?)",

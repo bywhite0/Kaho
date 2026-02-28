@@ -1,4 +1,3 @@
-import os
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
@@ -26,25 +25,34 @@ async def _(args: Message = CommandArg()):
         "name": dm.get_character_name(cid),
         "generation": dm.get_generation_str(cid),
         "unit": dm.get_character_unit(cid),
-        "cv": char.get('CharacterVoice'),
+        "cv": char.get("CharacterVoice"),
         "profile": {},
         "gifts": [],
-        "costumes": {}
+        "costumes": {},
     }
 
     # Profile
-    parsed = parse_intro(char.get('Introduction', ''))
+    parsed = parse_intro(char.get("Introduction", ""))
     label_map = {
-        'Birthday': '生日',
-        'Height': '身高',
-        'Hobbies': '兴趣',
-        'Special Skills': '特长',
-        'Favorite Food': '喜欢的食物',
-        'Favorite Word': '喜欢的一句话',
-        'Favorite Subject': '喜欢的科目',
-        'Favorite Animal': '喜欢的动物',
+        "Birthday": "生日",
+        "Height": "身高",
+        "Hobbies": "兴趣",
+        "Special Skills": "特长",
+        "Favorite Food": "喜欢的食物",
+        "Favorite Word": "喜欢的一句话",
+        "Favorite Subject": "喜欢的科目",
+        "Favorite Animal": "喜欢的动物",
     }
-    for k in ['Birthday', 'Height', 'Hobbies', 'Special Skills', 'Favorite Food', 'Favorite Word', 'Favorite Subject', 'Favorite Animal']:
+    for k in [
+        "Birthday",
+        "Height",
+        "Hobbies",
+        "Special Skills",
+        "Favorite Food",
+        "Favorite Word",
+        "Favorite Subject",
+        "Favorite Animal",
+    ]:
         if k in parsed:
             data["profile"][label_map.get(k, k)] = parsed[k]
 
@@ -69,5 +77,5 @@ async def _(args: Message = CommandArg()):
     except Exception as e:
         await chara_cmd.finish(f"生成图片失败: {e}")
         return
-        
+
     await chara_cmd.finish(MessageSegment.image(img_bytes))

@@ -429,7 +429,7 @@ class DataManager:
         if not end_time and rows:
             try:
                 end_time = int(rows[-1][1])
-            except:
+            except (ValueError, IndexError):
                 end_time = 120000
 
         # Calculate section stats
@@ -687,7 +687,7 @@ class DataManager:
         for v in values:
             try:
                 result.append(int(v))
-            except:
+            except ValueError:
                 continue
         return result
 
@@ -880,7 +880,7 @@ class DataManager:
             if len(stage_str) >= 7:
                 try:
                     series_id = int(stage_str[2:7])
-                except:
+                except ValueError:
                     series_id = None
         if series_id is None:
             series_id = stage_entry.get("GradeQuestSeriesId")
@@ -1151,7 +1151,7 @@ class DataManager:
         for v in values:
             try:
                 result.append(int(v))
-            except:
+            except ValueError:
                 continue
         return result
 
