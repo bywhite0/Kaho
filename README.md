@@ -19,11 +19,11 @@ A NoneBot2-based bot for Link! Like! LoveLive! (Hasu no sora Jogakuin School Ido
 
 1. Clone the repository.
 2. `uv sync`
-2. Configure your NoneBot2 environment in `.env` or `.env.prod`.
-3. Ensure the required directories are populated with the game data files.
-4. Set up the asset directories (e.g., exports, assets) for images and icons.
-5. Set the `T2I_SERVICE_URL` in your environment variables.
-6. Run the bot using `uv run python bot.py`.
+3. Configure your NoneBot2 environment in `.env` or `.env.prod`.
+4. Ensure the required directories are populated with the game data files.
+5. Set up the asset directories (e.g., exports, assets) for images and icons.
+6. Set the `T2I_SERVICE_URL` in your environment variables.
+7. Run the bot using `uv run python bot.py`.
 
 ## Commands
 
