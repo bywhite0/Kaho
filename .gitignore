@@ -214,3 +214,4 @@ hailstorm
 secrets/
 .vscode
 .env.local
+data/
