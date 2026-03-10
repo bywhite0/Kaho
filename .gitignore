@@ -215,3 +215,9 @@ secrets/
 .vscode
 .env.local
 data/
+
+assets
+cache
+data
+exports
+masterdata
