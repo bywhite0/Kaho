@@ -9,7 +9,7 @@ dbrebuild_cmd = on_command("dbrebuild", permission=SUPERUSER)
 @dbrebuild_cmd.handle()
 async def _():
     dm = await get_dm_instance()
-    inserted = dm.store.rebuild(get_version_path(), dm.sanitize_yaml)
-    output = f"数据库已重建，新增行数: {inserted}"
+    changed = dm.store.rebuild(get_version_path(), dm.sanitize_yaml)
+    output = f"数据库已重建，变更行数: {changed}"
     if output:
         await dbrebuild_cmd.finish(output)
