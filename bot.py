@@ -1,7 +1,6 @@
 import os
 
 import nonebot
-from nonebot.adapters.console import Adapter as ConsoleAdapter
 from nonebot.adapters.onebot.v11 import Adapter as ONEBOT_V11Adapter
 
 from src.core.services.dm_provider import init_dm
