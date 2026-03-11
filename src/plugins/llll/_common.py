@@ -1,5 +1,5 @@
 from src.core.services.dm_provider import get_dm, get_paths, init_dm
-from src.utils.formatters import print_merged_skill
+from src.utils.formatters import build_skill_view
 
 
 async def get_dm_instance():
@@ -14,7 +14,7 @@ def get_version_path():
 
 
 def build_skill_block(dm, skill_data, title_prefix, cost_str="", show_type=True):
-    text = print_merged_skill(
+    view = build_skill_view(
         dm,
         skill_data,
         title_prefix,
@@ -22,7 +22,7 @@ def build_skill_block(dm, skill_data, title_prefix, cost_str="", show_type=True)
         show_type=show_type,
     )
     icon_id = skill_data.get("icon_id") if skill_data else None
-    return text, icon_id
+    return view, icon_id
 
 
 def build_state_images(dm, card_id, series_id):

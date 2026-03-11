@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/img.html" import res_img %}
 {% from "macros/icon.html" import icon %}
+{% from "macros/card_skill.html" import render_skill_view %}
 
 {% block title %}Card {{ series_id }}{% endblock %}
 
@@ -97,46 +98,24 @@
 
 <div class="section">
     <div class="section-title">SIS Mode (School Idol Stage)</div>
-    {% if sis_skill_text %}
-    <div class="skill-box">
-        <div style="display: flex; align-items: flex-start; gap: 10px;">
-            {% if sis_skill_icon_id %}<div style="flex-shrink: 0; margin-top: 2px;">{{ icon(sis_skill_icon_id,
-                type='skill', size=32) }}</div>{% endif %}
-            <div style="white-space: pre-wrap; font-family: monospace;">{{ sis_skill_text }}</div>
-        </div>
-    </div>
+    {% if sis_skill_view %}
+    {{ render_skill_view(sis_skill_view, sis_skill_icon_id) }}
     {% endif %}
-    {% if sis_special_text %}
-    <div class="skill-box">
-        <div style="display: flex; align-items: flex-start; gap: 10px;">
-            {% if sis_special_icon_id %}<div style="flex-shrink: 0; margin-top: 2px;">{{ icon(sis_special_icon_id,
-                type='skill', size=32) }}</div>{% endif %}
-            <div style="white-space: pre-wrap; font-family: monospace;">{{ sis_special_text }}</div>
-        </div>
-    </div>
+    {% if sis_special_view %}
+    {{ render_skill_view(sis_special_view, sis_special_icon_id) }}
     {% endif %}
-    {% if sis_attribute_text %}
-    <div class="skill-box">
-        <div style="display: flex; align-items: flex-start; gap: 10px;">
-            {% if sis_attribute_icon_id %}<div style="flex-shrink: 0; margin-top: 2px;">{{ icon(sis_attribute_icon_id,
-                type='skill', size=32) }}</div>{% endif %}
-            <div style="white-space: pre-wrap; font-family: monospace;">{{ sis_attribute_text }}</div>
-        </div>
-    </div>
+    {% if sis_attribute_view %}
+    {{ render_skill_view(sis_attribute_view, sis_attribute_icon_id) }}
     {% endif %}
 </div>
 
 <div class="section">
     <div class="section-title">Rhythm Mode (School Idol Show)</div>
-    {% if rhythm_skill_text %}
-    <div class="skill-box">
-        <div style="white-space: pre-wrap; font-family: monospace;">{{ rhythm_skill_text }}</div>
-    </div>
+    {% if rhythm_skill_view %}
+    {{ render_skill_view(rhythm_skill_view) }}
     {% endif %}
-    {% if center_skill_text %}
-    <div class="skill-box">
-        <div style="white-space: pre-wrap; font-family: monospace;">{{ center_skill_text }}</div>
-    </div>
+    {% if center_skill_view %}
+    {{ render_skill_view(center_skill_view) }}
     {% endif %}
     {% if center_attributes %}
     <div class="skill-box">

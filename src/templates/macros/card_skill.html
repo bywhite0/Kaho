@@ -1,0 +1,48 @@
+{% from "macros/icon.html" import icon %}
+
+{% macro render_skill_view(view, icon_id=None, nested=false) %}
+{% if view %}
+<div class="skill-box" style="{% if nested %}margin-top: 8px; background: #eef2ff;{% endif %}">
+    <div style="display: flex; align-items: flex-start; gap: 10px;">
+        {% if icon_id and not nested %}
+        <div style="flex-shrink: 0; margin-top: 2px;">
+            {{ icon(icon_id, type='skill', size=32) }}
+        </div>
+        {% endif %}
+        <div style="flex: 1;">
+            <div style="font-weight: 600; margin-bottom: 6px;">
+                {% if view.title_prefix %}{{ view.title_prefix }} {% endif %}{{ view.name }}
+                {% if view.cost %}
+                <span style="font-size: 0.9em; color: #475569;">{{ view.cost }}</span>
+                {% endif %}
+                {% if view.type %}
+                <span class="tag">Type: {{ view.type }}</span>
+                {% endif %}
+            </div>
+            {% if view.template %}
+            <div style="margin-bottom: 6px;">效果: {{ view.template }}</div>
+            {% endif %}
+            {% if view.ranges %}
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                {% for row in view.ranges %}
+                <span class="tag">{{ row.label }} {{ row.value }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if view.token %}
+    <div style="margin-top: 10px; padding-left: 10px; border-left: 3px solid #93c5fd;">
+        <div style="font-size: 0.85em; color: #1d4ed8; margin-bottom: 6px;">追加卡牌信息</div>
+        {% if view.token.skill %}
+        {{ render_skill_view(view.token.skill, none, true) }}
+        {% endif %}
+        {% if view.token.ability %}
+        {{ render_skill_view(view.token.ability, none, true) }}
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endmacro %}

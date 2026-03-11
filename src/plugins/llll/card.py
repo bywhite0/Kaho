@@ -67,7 +67,7 @@ async def _(args: Message = CommandArg()):
     sis_special_data = dm.get_all_skills_data(base.get("SpecialAppealSeriesId"))
     sis_attribute_data = dm.get_all_skills_data(base.get("AttributeId"))
 
-    data["sis_skill_text"], sis_skill_icon_id = build_skill_block(
+    data["sis_skill_view"], sis_skill_icon_id = build_skill_block(
         dm,
         sis_skill_data,
         "技能: ",
@@ -76,7 +76,7 @@ async def _(args: Message = CommandArg()):
     if sis_skill_icon_id:
         data["sis_skill_icon_id"] = sis_skill_icon_id
 
-    data["sis_special_text"], sis_special_icon_id = build_skill_block(
+    data["sis_special_view"], sis_special_icon_id = build_skill_block(
         dm,
         sis_special_data,
         "特殊演出: ",
@@ -85,7 +85,7 @@ async def _(args: Message = CommandArg()):
     if sis_special_icon_id:
         data["sis_special_icon_id"] = sis_special_icon_id
 
-    data["sis_attribute_text"], sis_attribute_icon_id = build_skill_block(
+    data["sis_attribute_view"], sis_attribute_icon_id = build_skill_block(
         dm, sis_attribute_data, "特性: "
     )
     if sis_attribute_icon_id:
@@ -94,14 +94,14 @@ async def _(args: Message = CommandArg()):
     cost_r = dm.get_cost_transition(
         series_id, "RhythmGameSkillSeriesId", dm.get_rhythm_skills_map(), "ConsumeAP"
     )
-    data["rhythm_skill_text"], _ = build_skill_block(
+    data["rhythm_skill_view"], _ = build_skill_block(
         dm,
         dm.get_all_rhythm_skills_data(base.get("RhythmGameSkillSeriesId")),
         "技能: ",
         cost_str=f"（AP 消耗: {cost_r}）",
         show_type=False,
     )
-    data["center_skill_text"], _ = build_skill_block(
+    data["center_skill_view"], _ = build_skill_block(
         dm,
         dm.get_all_center_skills_data(base.get("CenterSkillSeriesId")),
         "Center 技能: ",
