@@ -16,8 +16,12 @@ class DataManager:
         self.data = {}
         self.store = DataStore(data_dir)
         self.card_datas = []
+        self.card_series_index = {}
+        self.cards_by_character_index = {}
+        self.card_series_heads = []
         self.card_rarities = {}
         self.characters = {}
+        self.character_alias_map = {}
         self.skill_series = {}
         self.skills = {}
         self.items = {}
@@ -102,6 +106,9 @@ class DataManager:
 
     def sanitize_yaml(self, content):
         return re.sub(r":\s+-\s*$", r': "-"', content, flags=re.MULTILINE)
+
+    def _normalize_name_key(self, text):
+        return re.sub(r"\s+", "", str(text or "")).lower()
 
     def load_yaml_file(self, filename):
         try:
@@ -247,9 +254,26 @@ class DataManager:
             self._loaded.add(group)
 
     def _load_characters(self):
-        self.characters = {
-            c["Id"]: c for c in (self.load_yaml_file("Characters.yaml") or [])
-        }
+        self.characters = {}
+        self.character_alias_map = {}
+        for c in self.load_yaml_file("Characters.yaml") or []:
+            char_id = c.get("Id")
+            if char_id is None:
+                continue
+            self.characters[char_id] = c
+            aliases = [
+                c.get("NameFirst"),
+                c.get("NameLast"),
+                (c.get("NameLast") or "") + (c.get("NameFirst") or ""),
+                c.get("LatinAlphabetNameFirst"),
+                c.get("LatinAlphabetNameLast"),
+                c.get("DisplayFullName"),
+            ]
+            for alias in aliases:
+                key = self._normalize_name_key(alias)
+                if key and key not in self.character_alias_map:
+                    self.character_alias_map[key] = char_id
+            self.character_alias_map[str(char_id)] = char_id
 
     def _load_card_rarities(self):
         self.card_rarities = {
@@ -258,7 +282,28 @@ class DataManager:
         }
 
     def _load_card_datas(self):
-        self.card_datas = self.load_yaml_file("CardDatas.yaml") or []
+        self.card_datas = sorted(
+            self.load_yaml_file("CardDatas.yaml") or [],
+            key=lambda x: x.get("Id") or 0,
+        )
+        self.card_series_index = {}
+        self.cards_by_character_index = {}
+        for card in self.card_datas:
+            series_id = card.get("CardSeriesId")
+            if series_id is not None:
+                if series_id not in self.card_series_index:
+                    self.card_series_index[series_id] = []
+                self.card_series_index[series_id].append(card)
+            char_id = card.get("CharactersId")
+            if char_id is not None:
+                if char_id not in self.cards_by_character_index:
+                    self.cards_by_character_index[char_id] = []
+                self.cards_by_character_index[char_id].append(card)
+        self.card_series_heads = [
+            self.card_series_index[series_id][0]
+            for series_id in sorted(self.card_series_index)
+            if self.card_series_index[series_id]
+        ]
 
     def _load_card_series_meta(self):
         self.card_series_meta = {}
@@ -526,22 +571,10 @@ class DataManager:
 
     def get_character_id_by_name(self, name):
         self._ensure("characters")
-        target = name.replace(" ", "").lower()
-        for char_id, char_data in self.characters.items():
-            names = [
-                (char_data.get("NameFirst") or "").replace(" ", "").lower(),
-                (char_data.get("NameLast") or "").replace(" ", "").lower(),
-                ((char_data.get("NameLast") or "") + (char_data.get("NameFirst") or ""))
-                .replace(" ", "")
-                .lower(),
-                (char_data.get("LatinAlphabetNameFirst") or "")
-                .replace(" ", "")
-                .lower(),
-                (char_data.get("LatinAlphabetNameLast") or "").replace(" ", "").lower(),
-            ]
-            if target in names or str(char_id) == target:
-                return char_id
-        return None
+        target = self._normalize_name_key(name)
+        if not target:
+            return None
+        return self.character_alias_map.get(target)
 
     def get_character(self, char_id):
         self._ensure("characters")
@@ -593,21 +626,33 @@ class DataManager:
 
     def get_card_series_data(self, series_id):
         self._ensure("card_datas")
-        return sorted(
-            [c for c in self.card_datas if c.get("CardSeriesId") == series_id],
-            key=lambda x: x["Id"],
-        )
+        return list(self.card_series_index.get(series_id, []))
 
     def get_cards_by_character(self, char_id):
         self._ensure("card_datas")
-        return sorted(
-            [c for c in self.card_datas if c.get("CharactersId") == char_id],
-            key=lambda x: x["Id"],
-        )
+        return list(self.cards_by_character_index.get(char_id, []))
 
     def get_all_card_datas(self):
         self._ensure("card_datas")
         return self.card_datas
+
+    def search_card_series(self, query, limit=30):
+        self._ensure("card_datas")
+        target = str(query or "").strip().lower()
+        if not target:
+            return []
+        if target.isdigit():
+            series_id = int(target)
+            cards = self.card_series_index.get(series_id, [])
+            return [cards[0]] if cards else []
+        max_results = max(int(limit or 0), 1)
+        results = []
+        for card in self.card_series_heads:
+            if target in str(card.get("Name") or "").lower():
+                results.append(card)
+                if len(results) >= max_results:
+                    break
+        return results
 
     def get_card_series_meta(self, series_id):
         self._ensure("card_series_meta")

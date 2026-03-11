@@ -18,24 +18,7 @@ async def _(args: Message = CommandArg()):
         await find_cmd.finish("未找到。")
         return
 
-    # Assuming get_cards_by_character exists as it was used in original code
-    # If not, I might need to implement it or use another method, but since it was there, I assume it works.
-    # Wait, in search.py: dm.get_all_card_datas()
-    # Maybe find.py was using a method that doesn't exist? Or I missed checking data_manager.py
-    # Assuming it works.
-
-    # Actually, let's double check data_manager.py if I can, but I don't need to if I trust the existing code.
-    # However, I should be careful.
-    # Let's just use what was there.
-
-    try:
-        cards_data = dm.get_cards_by_character(cid)
-    except AttributeError:
-        # Fallback if method doesn't exist (e.g. if I misread or it's missing)
-        # In search.py, it iterates all cards.
-        cards_data = [
-            c for c in dm.get_all_card_datas() if c.get("CharactersId") == cid
-        ]
+    cards_data = dm.get_cards_by_character(cid)
 
     series_map = {}
     for c in cards_data:

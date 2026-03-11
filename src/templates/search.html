@@ -7,6 +7,9 @@
 <div class="header">
     <h1>搜索结果</h1>
     <p>关键词: "{{ query }}"</p>
+    {% if is_limited %}
+    <p style="color: #b45309;">结果较多，仅显示前 {{ max_results }} 条。</p>
+    {% endif %}
 </div>
 
 <div class="section">

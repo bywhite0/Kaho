@@ -7,20 +7,17 @@ from ._common import get_dm_instance
 
 
 search_cmd = on_command("search")
+MAX_SEARCH_RESULTS = 30
 
 
 @search_cmd.handle()
 async def _(args: Message = CommandArg()):
     dm = await get_dm_instance()
     query = args.extract_plain_text().strip()
-    results = []
-    seen = set()
-    for c in dm.get_all_card_datas():
-        if c["CardSeriesId"] in seen:
-            continue
-        if query.lower() in (c.get("Name") or "").lower():
-            results.append(c)
-            seen.add(c["CardSeriesId"])
+    if not query:
+        await search_cmd.finish("请输入关键词。")
+        return
+    results = dm.search_card_series(query, limit=MAX_SEARCH_RESULTS)
 
     if not results:
         await search_cmd.finish("未找到。")
@@ -65,7 +62,13 @@ async def _(args: Message = CommandArg()):
 
     try:
         img_bytes = await get_t2i_service().generate_image(
-            "search.html", {"query": query, "results": cards}
+            "search.html",
+            {
+                "query": query,
+                "results": cards,
+                "is_limited": len(results) >= MAX_SEARCH_RESULTS,
+                "max_results": MAX_SEARCH_RESULTS,
+            },
         )
     except Exception as e:
         await search_cmd.finish(f"生成图片失败: {e}")
