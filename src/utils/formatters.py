@@ -63,24 +63,43 @@ def _build_skill_view_impl(
             label = f"Lv.{start_level}-{end_level}"
         ranges.append({"label": label, "value": value})
 
-    token_data = res.get("token") or {}
-    token_skill = _build_skill_view_impl(
-        dm,
-        token_data.get("skill"),
-        title_prefix="技能:",
-        show_type=False,
-        visited=visited_set,
-    )
-    token_ability = _build_skill_view_impl(
-        dm,
-        token_data.get("ability"),
-        title_prefix="特性:",
-        show_type=False,
-        visited=visited_set,
-    )
+    token_cards = []
+    for token_entry in res.get("token_cards") or []:
+        raw_skill = token_entry.get("skill")
+        raw_ability = token_entry.get("ability")
+        token_skill = _build_skill_view_impl(
+            dm,
+            raw_skill,
+            title_prefix="技能:",
+            show_type=False,
+            visited=visited_set,
+        )
+        token_ability = _build_skill_view_impl(
+            dm,
+            raw_ability,
+            title_prefix="特性:",
+            show_type=False,
+            visited=visited_set,
+        )
+        token_resource_id = token_entry.get("resource_id")
+        if not (token_skill or token_ability or token_resource_id):
+            continue
+        token_cards.append(
+            {
+                "skill": token_skill,
+                "ability": token_ability,
+                "resource_id": token_resource_id,
+                "skill_icon_id": raw_skill.get("icon_id") if raw_skill else None,
+                "ability_icon_id": raw_ability.get("icon_id") if raw_ability else None,
+            }
+        )
+
     token_view = None
-    if token_skill or token_ability:
-        token_view = {"skill": token_skill, "ability": token_ability}
+    if token_cards:
+        token_view = {
+            "skill": token_cards[0].get("skill"),
+            "ability": token_cards[0].get("ability"),
+        }
 
     return {
         "title_prefix": title_prefix,
@@ -90,6 +109,7 @@ def _build_skill_view_impl(
         "type": skill_data.get("main_effect") if show_type else "",
         "ranges": ranges,
         "token": token_view,
+        "token_cards": token_cards,
     }
 
 
@@ -121,13 +141,23 @@ def _render_skill_view_text(view, lines=None, indent=0):
         lines.append(f"{prefix}Effect: {template}")
     for row in view.get("ranges") or []:
         lines.append(f"{prefix}{row.get('label')}: {row.get('value')}")
-    token = view.get("token") or {}
-    if token:
-        lines.append(f"{prefix}[Added Card Info]")
-    if token.get("skill"):
-        _render_skill_view_text(token.get("skill"), lines, indent + 2)
-    if token.get("ability"):
-        _render_skill_view_text(token.get("ability"), lines, indent + 2)
+    token_cards = view.get("token_cards") or []
+    if token_cards:
+        lines.append(f"{prefix}[Added Card Info x{len(token_cards)}]")
+        for idx, token_entry in enumerate(token_cards, start=1):
+            lines.append(f"{prefix}  [Card {idx}]")
+            if token_entry.get("skill"):
+                _render_skill_view_text(token_entry.get("skill"), lines, indent + 4)
+            if token_entry.get("ability"):
+                _render_skill_view_text(token_entry.get("ability"), lines, indent + 4)
+    else:
+        token = view.get("token") or {}
+        if token:
+            lines.append(f"{prefix}[Added Card Info]")
+        if token.get("skill"):
+            _render_skill_view_text(token.get("skill"), lines, indent + 2)
+        if token.get("ability"):
+            _render_skill_view_text(token.get("ability"), lines, indent + 2)
     return "\n".join(lines).rstrip()
 
 

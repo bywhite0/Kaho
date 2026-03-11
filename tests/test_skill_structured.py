@@ -32,6 +32,18 @@ class SkillStructuredTest(unittest.TestCase):
   Name: 追加特性
   SkillIcon: 3001
   SkillMainEffect: Ability
+- Id: 210
+  Name: 追加技能二
+  SkillIcon: 2101
+  SkillMainEffect: Heart
+- Id: 310
+  Name: 追加特性二
+  SkillIcon: 3101
+  SkillMainEffect: Ability
+- Id: 110
+  Name: 分支主技能
+  SkillIcon: 1101
+  SkillMainEffect: Branch
 """.strip(),
             encoding="utf-8",
         )
@@ -41,11 +53,15 @@ class SkillStructuredTest(unittest.TestCase):
 - CardSkillSeriesId: 100
   SkillLevel: 1
   Description: 造成$100$点伤害
-  CardSkillEffectId: 11100010010
+  CardSkillEffectId: 11100010010,11100020010
 - CardSkillSeriesId: 100
   SkillLevel: 2
   Description: 造成$120$点伤害
-  CardSkillEffectId: 11100010010
+  CardSkillEffectId: 11100010010,11100020010
+- CardSkillSeriesId: 110
+  SkillLevel: 1
+  Description: 触发分支$1$次
+  CardSkillEffectId: 22200010010,22200019999
 - CardSkillSeriesId: 200
   SkillLevel: 1
   Description: 恢复$50$点
@@ -53,6 +69,14 @@ class SkillStructuredTest(unittest.TestCase):
 - CardSkillSeriesId: 300
   SkillLevel: 1
   Description: 提升$5$%
+  CardSkillEffectId: 0
+- CardSkillSeriesId: 210
+  SkillLevel: 1
+  Description: 恢复$70$点
+  CardSkillEffectId: 0
+- CardSkillSeriesId: 310
+  SkillLevel: 1
+  Description: 提升$7$%
   CardSkillEffectId: 0
 """.strip(),
             encoding="utf-8",
@@ -66,6 +90,30 @@ class SkillStructuredTest(unittest.TestCase):
 - Id: 111000100102
   SkillEffectDetailType: TOKEN_CARD_ABILITY_CARD_SKILL_SERIES_ID
   EffectValue: 300
+- Id: 111000100103
+  SkillEffectDetailType: TOKEN_CARD_RESOURCE_ID
+  EffectValue: 6001
+- Id: 111000200101
+  SkillEffectDetailType: TOKEN_CARD_SKILL_CARD_SKILL_SERIES_ID
+  EffectValue: 210
+- Id: 111000200102
+  SkillEffectDetailType: TOKEN_CARD_ABILITY_CARD_SKILL_SERIES_ID
+  EffectValue: 310
+- Id: 111000200103
+  SkillEffectDetailType: TOKEN_CARD_RESOURCE_ID
+  EffectValue: 6002
+- Id: 222000100101
+  SkillEffectDetailType: BRANCH_EFFECT_ID1
+  EffectValue: 22200010011
+- Id: 222000100111
+  SkillEffectDetailType: TOKEN_CARD_SKILL_CARD_SKILL_SERIES_ID
+  EffectValue: 200
+- Id: 222000100112
+  SkillEffectDetailType: TOKEN_CARD_ABILITY_CARD_SKILL_SERIES_ID
+  EffectValue: 300
+- Id: 222000100113
+  SkillEffectDetailType: TOKEN_CARD_RESOURCE_ID
+  EffectValue: 6003
 """.strip(),
             encoding="utf-8",
         )
@@ -87,6 +135,7 @@ class SkillStructuredTest(unittest.TestCase):
         self.assertIsNotNone(token_entry)
         self.assertEqual(token_entry["skill_series_id"], 200)
         self.assertEqual(token_entry["ability_series_id"], 300)
+        self.assertEqual(token_entry["resource_id"], 6001)
 
     def test_get_merged_skill_desc_returns_structured_token(self):
         skill_data = self.dm.get_all_skills_data(100)
@@ -99,6 +148,11 @@ class SkillStructuredTest(unittest.TestCase):
         self.assertIn("value", merged["ranges"][0])
         self.assertEqual(merged["token"]["skill"]["id"], 200)
         self.assertEqual(merged["token"]["ability"]["id"], 300)
+        self.assertEqual(len(merged["token_cards"]), 2)
+        self.assertEqual(merged["token_cards"][1]["skill"]["id"], 210)
+        self.assertEqual(merged["token_cards"][1]["ability"]["id"], 310)
+        self.assertEqual(merged["token_cards"][0]["resource_id"], 6001)
+        self.assertEqual(merged["token_cards"][1]["resource_id"], 6002)
 
     def test_build_skill_view_contains_token_branches(self):
         skill_data = self.dm.get_all_skills_data(100)
@@ -117,6 +171,30 @@ class SkillStructuredTest(unittest.TestCase):
         self.assertIsNotNone(view["token"]["ability"])
         self.assertEqual(view["token"]["skill"]["name"], "追加技能")
         self.assertEqual(view["token"]["ability"]["name"], "追加特性")
+        self.assertEqual(len(view["token_cards"]), 2)
+        self.assertEqual(view["token_cards"][0]["skill_icon_id"], 2001)
+        self.assertEqual(view["token_cards"][0]["ability_icon_id"], 3001)
+        self.assertEqual(view["token_cards"][0]["resource_id"], 6001)
+        self.assertEqual(view["token_cards"][1]["skill"]["name"], "追加技能二")
+        self.assertEqual(view["token_cards"][1]["ability"]["name"], "追加特性二")
+        self.assertEqual(view["token_cards"][1]["resource_id"], 6002)
+
+    def test_get_merged_skill_desc_supports_indirect_token_reference(self):
+        self.dm._ensure("token_skill_map")
+        token_entry = self.dm.token_skill_map.get("22200010010")
+        self.assertIsNotNone(token_entry)
+        self.assertEqual(token_entry["skill_series_id"], 200)
+        self.assertEqual(token_entry["ability_series_id"], 300)
+        self.assertEqual(token_entry["resource_id"], 6003)
+
+        skill_data = self.dm.get_all_skills_data(110)
+        merged = self.dm.get_merged_skill_desc(skill_data)
+        self.assertIsNotNone(merged)
+        self.assertIsNotNone(merged["token"])
+        self.assertEqual(merged["token"]["skill"]["id"], 200)
+        self.assertEqual(merged["token"]["ability"]["id"], 300)
+        self.assertEqual(len(merged["token_cards"]), 1)
+        self.assertEqual(merged["token_cards"][0]["resource_id"], 6003)
 
 
 if __name__ == "__main__":

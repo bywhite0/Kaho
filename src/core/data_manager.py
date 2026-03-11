@@ -396,29 +396,99 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
 
     def _load_token_skill_map(self):
         self.token_skill_map = {}
+        direct_map = {}
+        effect_links = {}
         details = self.load_yaml_file("CardSkillEffectDetails.yaml") or []
         for d in details:
-            effect_type = d.get("SkillEffectDetailType")
-            if effect_type not in (
-                "TOKEN_CARD_SKILL_CARD_SKILL_SERIES_ID",
-                "TOKEN_CARD_ABILITY_CARD_SKILL_SERIES_ID",
-            ):
-                continue
             d_id = str(d.get("Id") or "")
             if len(d_id) < 2:
                 continue
             prefix = d_id[:-1]
-            if prefix not in self.token_skill_map:
-                self.token_skill_map[prefix] = {
+            effect_type = str(d.get("SkillEffectDetailType") or "")
+            if prefix not in direct_map:
+                direct_map[prefix] = {
                     "skill_series_id": None,
                     "ability_series_id": None,
+                    "resource_id": None,
                 }
+
+            if "EFFECT_ID" in effect_type:
+                try:
+                    ref_effect_id = int(d.get("EffectValue"))
+                except (TypeError, ValueError):
+                    ref_effect_id = None
+                if ref_effect_id:
+                    if prefix not in effect_links:
+                        effect_links[prefix] = set()
+                    effect_links[prefix].add(str(ref_effect_id))
+
+            if effect_type not in (
+                "TOKEN_CARD_SKILL_CARD_SKILL_SERIES_ID",
+                "TOKEN_CARD_ABILITY_CARD_SKILL_SERIES_ID",
+                "TOKEN_CARD_RESOURCE_ID",
+            ):
+                continue
             if effect_type == "TOKEN_CARD_SKILL_CARD_SKILL_SERIES_ID":
-                self.token_skill_map[prefix]["skill_series_id"] = d.get("EffectValue")
+                direct_map[prefix]["skill_series_id"] = d.get("EffectValue")
             elif effect_type == "TOKEN_CARD_ABILITY_CARD_SKILL_SERIES_ID":
-                self.token_skill_map[prefix]["ability_series_id"] = d.get(
-                    "EffectValue"
-                )
+                direct_map[prefix]["ability_series_id"] = d.get("EffectValue")
+            elif effect_type == "TOKEN_CARD_RESOURCE_ID":
+                direct_map[prefix]["resource_id"] = d.get("EffectValue")
+
+        resolved_cache = {}
+        resolving = set()
+
+        def _merge_token_info(base, extra):
+            if (
+                not base.get("skill_series_id")
+                and extra
+                and extra.get("skill_series_id")
+            ):
+                base["skill_series_id"] = extra.get("skill_series_id")
+            if (
+                not base.get("ability_series_id")
+                and extra
+                and extra.get("ability_series_id")
+            ):
+                base["ability_series_id"] = extra.get("ability_series_id")
+            if not base.get("resource_id") and extra and extra.get("resource_id"):
+                base["resource_id"] = extra.get("resource_id")
+
+        def _resolve_token_info(effect_id):
+            if effect_id in resolved_cache:
+                return resolved_cache[effect_id]
+            if effect_id in resolving:
+                return None
+
+            resolving.add(effect_id)
+            merged = {
+                "skill_series_id": None,
+                "ability_series_id": None,
+                "resource_id": None,
+            }
+            _merge_token_info(merged, direct_map.get(effect_id))
+
+            for next_effect_id in effect_links.get(effect_id, set()):
+                _merge_token_info(merged, _resolve_token_info(next_effect_id))
+                if merged.get("skill_series_id") and merged.get("ability_series_id"):
+                    break
+
+            resolving.remove(effect_id)
+
+            if (
+                merged.get("skill_series_id")
+                or merged.get("ability_series_id")
+                or merged.get("resource_id")
+            ):
+                resolved_cache[effect_id] = merged
+            else:
+                resolved_cache[effect_id] = None
+            return resolved_cache[effect_id]
+
+        for effect_id in set(direct_map.keys()) | set(effect_links.keys()):
+            resolved = _resolve_token_info(effect_id)
+            if resolved:
+                self.token_skill_map[effect_id] = resolved
 
     def _load_card_evolution_materials(self):
         self.card_evolution_materials = {
@@ -1152,33 +1222,52 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
                 }
             )
 
-        token_info = None
+        token_cards = []
+        token_keys = set()
         for s in skills:
-            effect_id = s.get("CardSkillEffectId")
-            if effect_id is None:
-                continue
-            token_ref = self.token_skill_map.get(str(effect_id))
-            if not token_ref:
-                continue
-            skill_series_id = token_ref.get("skill_series_id")
-            ability_series_id = token_ref.get("ability_series_id")
-            token_skill = (
-                self.get_all_skills_data(skill_series_id) if skill_series_id else None
-            )
-            token_ability = (
-                self.get_all_skills_data(ability_series_id)
-                if ability_series_id
-                else None
-            )
-            if token_skill or token_ability:
-                token_info = {"skill": token_skill, "ability": token_ability}
-                break
+            effect_ids = self._normalize_id_list(s.get("CardSkillEffectId"))
+            for effect_id in effect_ids:
+                token_ref = self.token_skill_map.get(str(effect_id))
+                if not token_ref:
+                    continue
+                skill_series_id = token_ref.get("skill_series_id")
+                ability_series_id = token_ref.get("ability_series_id")
+                resource_id = token_ref.get("resource_id")
+                token_key = (skill_series_id, ability_series_id, resource_id)
+                if token_key in token_keys:
+                    continue
+                token_skill = (
+                    self.get_all_skills_data(skill_series_id) if skill_series_id else None
+                )
+                token_ability = (
+                    self.get_all_skills_data(ability_series_id)
+                    if ability_series_id
+                    else None
+                )
+                if not (token_skill or token_ability or resource_id):
+                    continue
+                token_cards.append(
+                    {
+                        "skill": token_skill,
+                        "ability": token_ability,
+                        "resource_id": resource_id,
+                    }
+                )
+                token_keys.add(token_key)
+
+        token_info = None
+        if token_cards:
+            token_info = {
+                "skill": token_cards[0].get("skill"),
+                "ability": token_cards[0].get("ability"),
+            }
         return {
             "name": series_dict.get("name"),
             "template": template,
             "ranges": ranges,
             "has_placeholders": has_placeholders,
             "token": token_info,
+            "token_cards": token_cards,
         }
 
     def get_all_skills_data(self, skill_series_id):

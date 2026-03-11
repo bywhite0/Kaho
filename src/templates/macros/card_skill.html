@@ -1,12 +1,13 @@
 {% from "macros/icon.html" import icon %}
+{% from "macros/img.html" import res_img %}
 
-{% macro render_skill_view(view, icon_id=None, nested=false) %}
+{% macro render_skill_view(view, icon_id=None, nested=false, show_icon_when_nested=false) %}
 {% if view %}
 <div class="skill-box" style="{% if nested %}margin-top: 8px; background: #eef2ff;{% endif %}">
     <div style="display: flex; align-items: flex-start; gap: 10px;">
-        {% if icon_id and not nested %}
+        {% if icon_id and (not nested or show_icon_when_nested) %}
         <div style="flex-shrink: 0; margin-top: 2px;">
-            {{ icon(icon_id, type='skill', size=32) }}
+            {{ icon(icon_id, type='skill', size=24 if nested else 32) }}
         </div>
         {% endif %}
         <div style="flex: 1;">
@@ -32,7 +33,31 @@
         </div>
     </div>
 
-    {% if view.token %}
+    {% if view.token_cards %}
+    <div style="margin-top: 10px; padding-left: 10px; border-left: 3px solid #93c5fd;">
+        <div style="font-size: 0.85em; color: #1d4ed8; margin-bottom: 6px;">追加卡牌信息</div>
+        {% for token_card in view.token_cards %}
+        <div style="margin-top: 8px; padding: 8px; border: 1px solid #dbeafe; border-radius: 8px; background: #f8fafc;">
+            <div style="display: flex; align-items: flex-start; gap: 10px;">
+                {% if token_card.resource_id %}
+                <div style="flex-shrink: 0; width: 76px; text-align: center;">
+                    {{ res_img(token_card.resource_id, 'middle_vertical', alt='token_card_' ~ token_card.resource_id,
+                    style="width: 76px; height: auto; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.12);") }}
+                </div>
+                {% endif %}
+                <div style="flex: 1;">
+                    {% if token_card.skill %}
+                    {{ render_skill_view(token_card.skill, token_card.skill_icon_id, true, true) }}
+                    {% endif %}
+                    {% if token_card.ability %}
+                    {{ render_skill_view(token_card.ability, token_card.ability_icon_id, true, true) }}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% elif view.token %}
     <div style="margin-top: 10px; padding-left: 10px; border-left: 3px solid #93c5fd;">
         <div style="font-size: 0.85em; color: #1d4ed8; margin-bottom: 6px;">追加卡牌信息</div>
         {% if view.token.skill %}
