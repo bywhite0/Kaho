@@ -398,13 +398,27 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         self.token_skill_map = {}
         details = self.load_yaml_file("CardSkillEffectDetails.yaml") or []
         for d in details:
-            if (
-                d.get("SkillEffectDetailType")
-                == "TOKEN_CARD_SKILL_CARD_SKILL_SERIES_ID"
+            effect_type = d.get("SkillEffectDetailType")
+            if effect_type not in (
+                "TOKEN_CARD_SKILL_CARD_SKILL_SERIES_ID",
+                "TOKEN_CARD_ABILITY_CARD_SKILL_SERIES_ID",
             ):
-                d_id = str(d["Id"])
-                prefix = d_id[:-1]
-                self.token_skill_map[prefix] = d["EffectValue"]
+                continue
+            d_id = str(d.get("Id") or "")
+            if len(d_id) < 2:
+                continue
+            prefix = d_id[:-1]
+            if prefix not in self.token_skill_map:
+                self.token_skill_map[prefix] = {
+                    "skill_series_id": None,
+                    "ability_series_id": None,
+                }
+            if effect_type == "TOKEN_CARD_SKILL_CARD_SKILL_SERIES_ID":
+                self.token_skill_map[prefix]["skill_series_id"] = d.get("EffectValue")
+            elif effect_type == "TOKEN_CARD_ABILITY_CARD_SKILL_SERIES_ID":
+                self.token_skill_map[prefix]["ability_series_id"] = d.get(
+                    "EffectValue"
+                )
 
     def _load_card_evolution_materials(self):
         self.card_evolution_materials = {
@@ -1093,7 +1107,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         if not series_dict or not series_dict.get(key):
             return None
         skills = series_dict[key]
-        first_desc = skills[0]["Description"]
+        first_desc = str(skills[0].get("Description") or "")
         has_placeholders = "$" in first_desc
         template = (
             re.sub(r"\$.*?\$", "{}", first_desc) if has_placeholders else first_desc
@@ -1101,8 +1115,11 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
 
         level_to_vals = {}
         for s in skills:
-            lv = s["SkillLevel"]
-            vals = re.findall(r"\$(.*?)\$", s["Description"])
+            lv = s.get("SkillLevel")
+            if lv is None:
+                continue
+            desc = str(s.get("Description") or "")
+            vals = re.findall(r"\$(.*?)\$", desc)
             val_str = "/".join(vals)
             if lv not in level_to_vals:
                 level_to_vals[lv] = set()
@@ -1112,32 +1129,55 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         if has_placeholders:
             sorted_lvs = sorted(level_to_vals.keys())
             if not sorted_lvs:
-                return {"name": series_dict["name"], "template": template, "ranges": []}
+                return {"name": series_dict.get("name"), "template": template, "ranges": []}
             curr_start = sorted_lvs[0]
             curr_val = " & ".join(sorted(list(level_to_vals[curr_start])))
             for i in range(1, len(sorted_lvs)):
                 lv = sorted_lvs[i]
                 val = " & ".join(sorted(list(level_to_vals[lv])))
                 if val != curr_val:
-                    ranges.append((curr_start, sorted_lvs[i - 1], curr_val))
+                    ranges.append(
+                        {
+                            "start_level": curr_start,
+                            "end_level": sorted_lvs[i - 1],
+                            "value": curr_val,
+                        }
+                    )
                     curr_start, curr_val = lv, val
-            ranges.append((curr_start, sorted_lvs[-1], curr_val))
+            ranges.append(
+                {
+                    "start_level": curr_start,
+                    "end_level": sorted_lvs[-1],
+                    "value": curr_val,
+                }
+            )
 
-        token_skill_series_id = None
+        token_info = None
         for s in skills:
-            eff_id = str(s.get("CardSkillEffectId"))
-            if eff_id in self.token_skill_map:
-                token_skill_series_id = self.token_skill_map[eff_id]
+            effect_id = s.get("CardSkillEffectId")
+            if effect_id is None:
+                continue
+            token_ref = self.token_skill_map.get(str(effect_id))
+            if not token_ref:
+                continue
+            skill_series_id = token_ref.get("skill_series_id")
+            ability_series_id = token_ref.get("ability_series_id")
+            token_skill = (
+                self.get_all_skills_data(skill_series_id) if skill_series_id else None
+            )
+            token_ability = (
+                self.get_all_skills_data(ability_series_id)
+                if ability_series_id
+                else None
+            )
+            if token_skill or token_ability:
+                token_info = {"skill": token_skill, "ability": token_ability}
                 break
-        token_info = (
-            self.get_all_skills_data(token_skill_series_id)
-            if token_skill_series_id
-            else None
-        )
         return {
-            "name": series_dict["name"],
+            "name": series_dict.get("name"),
             "template": template,
             "ranges": ranges,
+            "has_placeholders": has_placeholders,
             "token": token_info,
         }
 
