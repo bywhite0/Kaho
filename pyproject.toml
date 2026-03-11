@@ -1,6 +1,6 @@
 [project]
 name = "Kaho"
-version = "0.3.0"
+version = "0.3.1"
 requires-python = ">=3.9"
 dependencies = [
   "nonebot2[aiohttp,fastapi,httpx]",
@@ -10,5 +10,5 @@ dependencies = [
   "pillow>=11.3.0",
 ]
 
-[tool.uv]
-dev-dependencies = []
+[dependency-groups]
+dev = []
