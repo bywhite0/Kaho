@@ -27,7 +27,7 @@
     <div class="info-grid">
         <p><strong>角色:</strong> {{ character_name }}</p>
         <p><strong>稀有度:</strong> {{ rarity_name }} <span class="tag">{{ limited_type }}</span></p>
-        <p><strong>风格:</strong> {{ icon(base.Style, type='style', size=20) }} {{ style_name }} | <strong>心情:</strong> {{
+        <p><strong>风格:</strong> {{ icon(base.Style, type='style', size=20) }} {{ style_name }} | <strong>擅长气氛:</strong> {{
             icon(base.Mood, type='mood', size=20) }} {{ mood_name }}</p>
         {% if gachas %}
         <p><strong>登场卡池:</strong> {{ gachas|join(', ') }}</p>

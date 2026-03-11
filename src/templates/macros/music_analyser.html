@@ -10,7 +10,7 @@
         <h1 style="margin-top: 0;">{{ music.title }} <small style="font-size: 0.6em; color: #888;">(#{{ music.music_id }})</small></h1>
         <p><strong>简介:</strong> {{ music.description }}</p>
         <p><strong>歌曲类型:</strong> {{ music.song_type }} ({{ music.song_type_label }})</p>
-        <p><strong>心情:</strong>
+        <p><strong>气氛:</strong>
             {% if music.mood_key %}
             {{ icon(music.mood_key, type='mood', size=20) }}
             {% endif %}
@@ -41,7 +41,7 @@
 {% macro music_stage_block(music) %}
 {% if music.quest_live_stages or music.grade_live_stages or music.grand_prix_stages %}
 <div class="section">
-    <div class="section-title">舞台模式</div>
+    <div class="section-title">卡牌模式</div>
     {% if music.quest_live_stages %}
     <div class="skill-box">
         <strong>Quest Live:</strong>
@@ -100,7 +100,7 @@
 {% macro music_bp_analyser(music) %}
 {% if music.chart %}
 <div class="section">
-    <div class="section-title">BP 分布 (Total: {{ music.chart.total_beats }})</div>
+    <div class="section-title">歌曲分析仪</div>
     <div style="margin-bottom: 5px; font-size: 0.8em; color: #666; text-align: right;">时长: {{ music.chart.total_time_sec }}s</div>
 
     <div style="position: relative; width: 100%; height: 150px; background-color: #333; border-radius: 4px; overflow: hidden; font-family: sans-serif;">
