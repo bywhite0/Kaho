@@ -1,3 +1,6 @@
+from pathlib import Path
+from datetime import datetime, timedelta, timezone
+
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
@@ -7,6 +10,52 @@ from ._common import build_skill_block, build_state_images, get_dm_instance
 
 
 card_cmd = on_command("card")
+
+
+def _format_release_time_utc8(raw_time):
+    if raw_time is None:
+        return None
+    text = str(raw_time).strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return text
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    utc8 = timezone(timedelta(hours=8))
+    return dt.astimezone(utc8).strftime("%Y-%m-%d %H:%M:%S (UTC+8)")
+
+
+def _build_skill_material_categories(skill_mats):
+    categories = {}
+    for entry in skill_mats or []:
+        for mat in entry.get("materials") or []:
+            name = str(mat.get("name") or "").strip()
+            if "技能書" in name or "技能书" in name:
+                continue
+            if "R3" not in name.upper():
+                continue
+            item_id = mat.get("id")
+            key = item_id if item_id is not None else name
+            if key not in categories:
+                categories[key] = {"id": item_id, "name": name}
+    return list(categories.values())
+
+
+def _resolve_sticker_ids(all_cards, project_root):
+    sticker_dir = project_root / "exports" / "images" / "sticker"
+    sticker_ids = []
+    for card in all_cards:
+        card_id = card.get("Id")
+        if card_id is None:
+            continue
+        sticker_file = sticker_dir / f"image_sticker_{card_id}.png"
+        if sticker_file.exists():
+            sticker_ids.append(card_id)
+    return sorted(sticker_ids)
 
 
 @card_cmd.handle()
@@ -28,6 +77,7 @@ async def _(args: Message = CommandArg()):
         return
 
     base = all_cards[0]
+    project_root = Path(__file__).resolve().parents[3]
     series_meta = dm.get_card_series_meta(series_id)
     lim_type = dm.LIMITED_TYPES.get(
         series_meta.get("LimitedType"), f"Type {series_meta.get('LimitedType')}"
@@ -35,12 +85,12 @@ async def _(args: Message = CommandArg()):
 
     gachas_info = dm.get_gachas_for_series(series_id)
     gacha_names = [g["name"] for g in gachas_info]
-    release_date = gachas_info[0]["start_time"] if gachas_info else None
-
-    evo1_id = series_meta.get("Evolution1Id")
-    evo_mats = dm.get_card_evolution_materials(evo1_id) if evo1_id else []
+    release_date = (
+        _format_release_time_utc8(gachas_info[0]["start_time"]) if gachas_info else None
+    )
 
     skill_mats = dm.get_card_skill_levelup_materials(series_id)
+    skill_material_categories = _build_skill_material_categories(skill_mats)
 
     data = {
         "series_id": series_id,
@@ -52,10 +102,43 @@ async def _(args: Message = CommandArg()):
         "mood_name": dm.MOODS.get(base["Mood"]),
         "gachas": gacha_names,
         "release_date": release_date,
-        "evolution_materials": evo_mats,
-        "skill_materials": skill_mats,
+        "skill_materials": skill_material_categories,
         "all_cards": all_cards,
     }
+    data["sticker_ids"] = _resolve_sticker_ids(all_cards, project_root)
+    character_entry = dm.get_character(base.get("CharactersId")) or {}
+    last_name = str(character_entry.get("NameLast") or "").strip()
+    first_name = str(character_entry.get("NameFirst") or "").strip()
+    if last_name and first_name:
+        data["character_name_jp_spaced"] = f"{last_name}　{first_name}"
+    else:
+        data["character_name_jp_spaced"] = data["character_name"]
+
+    rarity_id = base.get("Rarity")
+    is_dr_rarity = rarity_id == 8
+    theme_color = dm.get_character_theme_color(base.get("CharactersId")) or "#f8b500"
+    card_nameplate_id = None
+    if not is_dr_rarity:
+        try:
+            rarity_token = f"{int(rarity_id):02d}"
+        except (TypeError, ValueError):
+            rarity_token = str(rarity_id)
+        char_id = base.get("CharactersId")
+        if char_id is not None:
+            card_nameplate_id = f"{char_id}_{rarity_token}"
+            nameplate_file = (
+                project_root
+                / "exports"
+                / "images"
+                / "gacha_cardinfo"
+                / f"image_gacha_cardinfo_{card_nameplate_id}.png"
+            )
+            if not nameplate_file.exists():
+                card_nameplate_id = None
+
+    data["character_theme_color"] = theme_color
+    data["card_nameplate_id"] = card_nameplate_id
+    data["is_dr_rarity"] = is_dr_rarity
 
     cost_s = dm.get_cost_transition(
         series_id, "SkillSeriesId", dm.get_card_skills_map(), "SkillCost"

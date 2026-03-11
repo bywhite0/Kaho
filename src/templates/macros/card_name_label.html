@@ -1,0 +1,27 @@
+{% from "macros/icon.html" import icon %}
+{% from "macros/img.html" import res_img %}
+
+{% macro render_card_name_label(base, character_name, character_name_jp_spaced, rarity_name, character_theme_color, card_nameplate_id=None, is_dr_rarity=false) %}
+<div class="card-name-label" style="--char-theme-color: {{ character_theme_color or '#f8b500' }};">
+    <div class="card-name-row">
+        <div class="card-name-style-icon">
+            {{ icon(base.Style, type='style', size=56, class='card-name-style-icon-img') }}
+        </div>
+        <div class="card-name-title">
+            ［ {{ base.Name }} ］
+        </div>
+    </div>
+    <div class="card-nameplate-wrapper">
+        {% if not is_dr_rarity and card_nameplate_id %}
+        {{ res_img(card_nameplate_id, 'gacha_cardinfo', alt='gacha_cardinfo_' ~ card_nameplate_id,
+        style="width: 100%; height: auto; display: block;") }}
+        {% else %}
+        <div class="card-nameplate-fallback">
+            <span class="card-nameplate-rarity">{{ rarity_name }}</span>
+            <span class="card-nameplate-sep">|</span>
+            <span class="card-nameplate-character">{{ character_name_jp_spaced or character_name }}</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endmacro %}

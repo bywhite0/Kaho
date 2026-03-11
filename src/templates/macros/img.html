@@ -13,6 +13,10 @@
 {% set src = config.IMG_DECK_FRAME_CHARA_URL ~ '/image_deck_frame_chara_' ~ id ~ '.png' %}
 {% elif type == 'prof_custom' %}
 {% set src = config.IMG_PROF_CUSTOM_URL ~ '/image_prof_custom_' ~ id ~ '.png' %}
+{% elif type == 'sticker' %}
+{% set src = config.IMG_STICKER_URL ~ '/image_sticker_' ~ id ~ '.png' %}
+{% elif type == 'gacha_cardinfo' %}
+{% set src = config.IMG_GACHA_CARDINFO_URL ~ '/image_gacha_cardinfo_' ~ id ~ '.png' %}
 {% else %}
 {% set src = id %}
 {% endif %}

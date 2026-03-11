@@ -66,6 +66,12 @@ class T2IService:
             "IMG_PROF_CUSTOM_URL": self._resolve_path(
                 os.getenv("IMG_PROF_CUSTOM_URL", "exports/images/prof_custom")
             ),
+            "IMG_STICKER_URL": self._resolve_path(
+                os.getenv("IMG_STICKER_URL", "exports/images/sticker")
+            ),
+            "IMG_GACHA_CARDINFO_URL": self._resolve_path(
+                os.getenv("IMG_GACHA_CARDINFO_URL", "exports/images/gacha_cardinfo")
+            ),
         }
 
     def _env_float(self, key: str, default: float) -> float:

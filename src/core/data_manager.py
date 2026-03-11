@@ -674,6 +674,18 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             return char.get("DisplayFullName") or str(char_id)
         return str(char_id)
 
+    def get_character_theme_color(self, char_id):
+        self._ensure("characters")
+        char = self.characters.get(char_id)
+        if not char:
+            return None
+        color = str(char.get("ThemeColor") or "").strip()
+        if not color.startswith("#"):
+            return None
+        if len(color) not in (4, 7):
+            return None
+        return color
+
     def get_generation_str(self, char_id):
         self._ensure("characters")
         char = self.characters.get(char_id)
@@ -1381,7 +1393,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
                     if item_id and num:
                         item = self.items.get(item_id)
                         name = item.get("Name") if item else str(item_id)
-                        mats.append({"name": name, "count": num})
+                        mats.append({"id": item_id, "name": name, "count": num})
             if not mats:
                 for i in range(1, 4):
                     item_id = entry.get(f"Cost_ItemsId{i}")
@@ -1389,7 +1401,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
                     if item_id and num:
                         item = self.items.get(item_id)
                         name = item.get("Name") if item else str(item_id)
-                        mats.append({"name": name, "count": num})
+                        mats.append({"id": item_id, "name": name, "count": num})
             if mats:
                 result.append(
                     {
