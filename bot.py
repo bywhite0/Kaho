@@ -4,6 +4,7 @@ import nonebot
 from nonebot.adapters.onebot.v11 import Adapter as ONEBOT_V11Adapter
 
 from src.core.services.dm_provider import init_dm
+from src.core.services.t2i import close_t2i_service
 
 
 nonebot.init()
@@ -17,8 +18,13 @@ nonebot.load_plugins(plugin_dir)
 
 
 @driver.on_startup
-async def _():
+async def _on_startup():
     await init_dm()
+
+
+@driver.on_shutdown
+async def _on_shutdown():
+    await close_t2i_service()
 
 
 if __name__ == "__main__":
