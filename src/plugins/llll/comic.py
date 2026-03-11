@@ -7,6 +7,7 @@ from ._common import get_dm_instance
 
 
 comic_cmd = on_command("comic")
+MAX_COMIC_RESULTS = 20
 
 
 TAB_LIST_MAP = {
@@ -21,7 +22,12 @@ TAB_LIST_MAP = {
 async def _(args: Message = CommandArg()):
     dm = await get_dm_instance()
     query = args.extract_plain_text().strip()
-    results = dm.search_comics(query)
+    if not query:
+        await comic_cmd.finish("请输入关键词。")
+        return
+    search_results = dm.search_comics(query, limit=MAX_COMIC_RESULTS + 1)
+    is_limited = len(search_results) > MAX_COMIC_RESULTS
+    results = search_results[:MAX_COMIC_RESULTS]
     if not results:
         await comic_cmd.finish("未找到。")
         return
@@ -47,7 +53,13 @@ async def _(args: Message = CommandArg()):
 
     try:
         img_bytes = await get_t2i_service().generate_image(
-            "comic.html", {"results": comics}
+            "comic.html",
+            {
+                "query": query,
+                "results": comics,
+                "is_limited": is_limited,
+                "max_results": MAX_COMIC_RESULTS,
+            },
         )
     except Exception as e:
         await comic_cmd.finish(f"生成图片失败: {e}")

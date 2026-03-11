@@ -7,6 +7,7 @@ from ._common import get_dm_instance
 
 
 music_cmd = on_command("music")
+MAX_MUSIC_RESULTS = 12
 
 
 def _get_stage_info(
@@ -106,7 +107,12 @@ def _format_duration(ms_value):
 async def _(args: Message = CommandArg()):
     dm = await get_dm_instance()
     query = args.extract_plain_text().strip()
-    results = dm.search_musics(query)
+    if not query:
+        await music_cmd.finish("请输入关键词。")
+        return
+    search_results = dm.search_musics(query, limit=MAX_MUSIC_RESULTS + 1)
+    is_limited = len(search_results) > MAX_MUSIC_RESULTS
+    results = search_results[:MAX_MUSIC_RESULTS]
     if not results:
         await music_cmd.finish("未找到。")
         return
@@ -225,7 +231,13 @@ async def _(args: Message = CommandArg()):
 
     try:
         img_bytes = await get_t2i_service().generate_image(
-            "music.html", {"musics": musics_data}
+            "music.html",
+            {
+                "query": query,
+                "musics": musics_data,
+                "is_limited": is_limited,
+                "max_results": MAX_MUSIC_RESULTS,
+            },
         )
     except Exception as e:
         await music_cmd.finish(f"生成图片失败: {e}")

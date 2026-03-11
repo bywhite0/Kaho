@@ -4,6 +4,14 @@
 {% block title %}Music Search{% endblock %}
 
 {% block content %}
+<div class="header">
+    <h1>歌曲搜索结果</h1>
+    {% if query %}<p>关键词: "{{ query }}"</p>{% endif %}
+    {% if is_limited %}
+    <p style="color: #b45309;">结果较多，仅显示前 {{ max_results }} 条。</p>
+    {% endif %}
+</div>
+
 {% for music in musics %}
 {{ music_header(music) }}
 {{ music_score_block(music) }}

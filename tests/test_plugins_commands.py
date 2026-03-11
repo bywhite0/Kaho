@@ -69,6 +69,16 @@ class _FakeFindDM:
         return None
 
 
+class _FakeMusicDM:
+    def search_musics(self, query, limit=None):
+        return []
+
+
+class _FakeComicDM:
+    def search_comics(self, query, limit=None):
+        return []
+
+
 class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
@@ -140,6 +150,34 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(_FinishCalled) as ctx:
                 await card_module._(_DummyMessage("abc"))
         self.assertEqual(ctx.exception.payload, "请输入有效的卡牌ID。")
+
+    async def test_music_empty_query(self):
+        import src.plugins.llll.music as music_module
+
+        async def fake_get_dm():
+            return _FakeMusicDM()
+
+        matcher = _DummyMatcher()
+        with patch.object(music_module, "music_cmd", matcher), patch.object(
+            music_module, "get_dm_instance", fake_get_dm
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await music_module._(_DummyMessage(" "))
+        self.assertEqual(ctx.exception.payload, "请输入关键词。")
+
+    async def test_comic_empty_query(self):
+        import src.plugins.llll.comic as comic_module
+
+        async def fake_get_dm():
+            return _FakeComicDM()
+
+        matcher = _DummyMatcher()
+        with patch.object(comic_module, "comic_cmd", matcher), patch.object(
+            comic_module, "get_dm_instance", fake_get_dm
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await comic_module._(_DummyMessage(" "))
+        self.assertEqual(ctx.exception.payload, "请输入关键词。")
 
 
 if __name__ == "__main__":
