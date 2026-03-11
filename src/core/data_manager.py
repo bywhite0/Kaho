@@ -35,7 +35,11 @@ class DataManager:
         self.style_voice_entries = {}
         self.style_movie_series = set()
         self.comics = []
+        self.comic_by_id = {}
+        self.comics_by_character = {}
         self.musics = []
+        self.music_by_id = {}
+        self.musics_by_character = {}
         self.song_type_map = {}
         self.music_scores = {}
         self.learning_stages_by_music = {}
@@ -780,6 +784,9 @@ class DataManager:
             self.style_movie_series.add(series_id)
 
     def _load_comics(self):
+        self.comics = []
+        self.comic_by_id = {}
+        self.comics_by_character = {}
         entries = self.load_yaml_file("Comics.yaml") or []
         for entry in entries:
             appearance_ids = self._normalize_character_ids(
@@ -787,8 +794,28 @@ class DataManager:
             )
             entry["AppearanceCharacterIds"] = appearance_ids
             self.comics.append(entry)
+            comic_id = entry.get("Id")
+            if comic_id is not None:
+                self.comic_by_id[comic_id] = entry
+            for char_id in appearance_ids:
+                if char_id not in self.comics_by_character:
+                    self.comics_by_character[char_id] = []
+                self.comics_by_character[char_id].append(entry)
 
-    def search_comics(self, query):
+    def _apply_limit(self, results, limit):
+        if limit is None:
+            return results
+        try:
+            max_items = int(limit)
+        except (TypeError, ValueError):
+            return results
+        if max_items <= 0:
+            return []
+        if len(results) <= max_items:
+            return results
+        return results[:max_items]
+
+    def search_comics(self, query, limit=None):
         self._ensure("comics", "characters")
         if query is None:
             query = ""
@@ -798,24 +825,28 @@ class DataManager:
             return results
         if query.isdigit():
             target_id = int(query)
-            for entry in self.comics:
-                if entry.get("Id") == target_id:
-                    results.append(entry)
-            return results
+            matched = self.comic_by_id.get(target_id)
+            if matched:
+                results.append(matched)
+            return self._apply_limit(results, limit)
         char_id = self.get_character_id_by_name(query)
         if char_id:
-            for entry in self.comics:
-                if char_id in (entry.get("AppearanceCharacterIds") or []):
-                    results.append(entry)
-            return results
+            return self._apply_limit(
+                list(self.comics_by_character.get(char_id, [])),
+                limit,
+            )
         q_lower = query.lower()
         for entry in self.comics:
             name = str(entry.get("Name") or "")
             if q_lower in name.lower():
                 results.append(entry)
-        return results
+        return self._apply_limit(results, limit)
 
     def _load_musics(self):
+        self.musics = []
+        self.music_by_id = {}
+        self.musics_by_character = {}
+        self.song_type_map = {}
         entries = self.load_yaml_file("Musics.yaml") or []
         for entry in entries:
             entry["SingerCharacterId"] = self._normalize_character_ids(
@@ -825,6 +856,23 @@ class DataManager:
                 entry.get("SupportCharacterId")
             )
             self.musics.append(entry)
+            music_id = entry.get("Id")
+            if music_id is not None:
+                self.music_by_id[music_id] = entry
+            related_char_ids = set()
+            center_id = entry.get("CenterCharacterId")
+            if center_id:
+                related_char_ids.add(center_id)
+            for char_id in entry.get("SingerCharacterId") or []:
+                if char_id:
+                    related_char_ids.add(char_id)
+            for char_id in entry.get("SupportCharacterId") or []:
+                if char_id:
+                    related_char_ids.add(char_id)
+            for char_id in related_char_ids:
+                if char_id not in self.musics_by_character:
+                    self.musics_by_character[char_id] = []
+                self.musics_by_character[char_id].append(entry)
             song_type = entry.get("SongType")
             desc = entry.get("Description")
             if song_type is not None and desc and song_type not in self.song_type_map:
@@ -836,7 +884,7 @@ class DataManager:
             return "オリジナル曲"
         return self.song_type_map.get(song_type)
 
-    def search_musics(self, query):
+    def search_musics(self, query, limit=None):
         self._ensure("musics", "characters")
         if query is None:
             query = ""
@@ -846,28 +894,22 @@ class DataManager:
             return results
         if query.isdigit() and len(query) > 5:
             target_id = int(query)
-            for entry in self.musics:
-                if entry.get("Id") == target_id:
-                    results.append(entry)
-            return results
+            matched = self.music_by_id.get(target_id)
+            if matched:
+                results.append(matched)
+            return self._apply_limit(results, limit)
         char_id = self.get_character_id_by_name(query)
         if char_id:
-            for entry in self.musics:
-                if entry.get("CenterCharacterId") == char_id:
-                    results.append(entry)
-                    continue
-                if char_id in (entry.get("SingerCharacterId") or []):
-                    results.append(entry)
-                    continue
-                if char_id in (entry.get("SupportCharacterId") or []):
-                    results.append(entry)
-            return results
+            return self._apply_limit(
+                list(self.musics_by_character.get(char_id, [])),
+                limit,
+            )
         q_lower = query.lower()
         for entry in self.musics:
             title = str(entry.get("Title") or "")
             if q_lower in title.lower():
                 results.append(entry)
-        return results
+        return self._apply_limit(results, limit)
 
     def get_music_score(self, music_id):
         self._ensure("music_scores")

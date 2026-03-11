@@ -65,6 +65,38 @@ class DataManagerIndexTest(unittest.TestCase):
             encoding="utf-8",
         )
 
+        (cls.data_dir / "Musics.yaml").write_text(
+            """
+- Id: 120001
+  Title: 朝の歌
+  Description: 活力曲
+  SongType: 2
+  CenterCharacterId: 101
+  SingerCharacterId: 101,102
+  SupportCharacterId: 0
+- Id: 120002
+  Title: 夜の歌
+  Description: 沉静曲
+  SongType: 3
+  CenterCharacterId: 102
+  SingerCharacterId: 102
+  SupportCharacterId: 101
+""".strip(),
+            encoding="utf-8",
+        )
+
+        (cls.data_dir / "Comics.yaml").write_text(
+            """
+- Id: 5001
+  Name: 朝间剧场
+  AppearanceCharacterIds: 101,102
+- Id: 5002
+  Name: 夜间剧场
+  AppearanceCharacterIds: 102
+""".strip(),
+            encoding="utf-8",
+        )
+
         cls.dm = DataManager(str(cls.data_dir))
 
     @classmethod
@@ -98,6 +130,25 @@ class DataManagerIndexTest(unittest.TestCase):
         results = self.dm.search_card_series("3001", limit=10)
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["CardSeriesId"], 3001)
+
+    def test_search_musics_by_id(self):
+        results = self.dm.search_musics("120001", limit=10)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["Id"], 120001)
+
+    def test_search_musics_by_character_and_limit(self):
+        results = self.dm.search_musics("日野下小鈴", limit=1)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["Id"], 120001)
+
+    def test_search_comics_by_character(self):
+        results = self.dm.search_comics("murano", limit=10)
+        self.assertEqual(len(results), 2)
+
+    def test_search_comics_by_id(self):
+        results = self.dm.search_comics("5002", limit=10)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["Id"], 5002)
 
 
 if __name__ == "__main__":
