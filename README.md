@@ -25,6 +25,12 @@ A NoneBot2-based bot for Link! Like! LoveLive! (Hasu no sora Jogakuin School Ido
 6. Set the `T2I_SERVICE_URL` in your environment variables.
 7. Run the bot using `uv run python bot.py`.
 
+## Local Tests
+
+- Fast tests (no real masterdata required): `uv run python scripts/run_fast_tests.py`
+- Realdata tests (uses sampled real masterdata): `uv run python scripts/run_realdata_tests.py`
+- Realdata tests with custom path: `uv run python scripts/run_realdata_tests.py D:\path\to\masterdata`
+
 ## Commands
 
 - `/list`: Display a list of characters.
