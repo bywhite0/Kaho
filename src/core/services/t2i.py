@@ -8,6 +8,13 @@ import httpx
 import jinja2
 from PIL import Image, ImageDraw, ImageFont
 
+try:
+    from nonebot import logger
+except ImportError:
+    import logging
+
+    logger = logging.getLogger("T2IService")
+
 
 class T2IService:
     def __init__(self):
@@ -129,8 +136,8 @@ class T2IService:
         if self.method == "t2i-service":
             try:
                 return await self._generate_via_service(template_name, data)
-            except Exception as error:
-                print(f"T2I Service failed: {error}. Falling back to Pillow.")
+            except Exception:
+                logger.exception(f"T2I 服务渲染失败，已降级到 Pillow: {template_name}")
                 return await self._generate_via_pillow(template_name, data)
         return await self._generate_via_pillow(template_name, data)
 
