@@ -20,24 +20,11 @@ def get_real_masterdata_dir() -> Optional[Path]:
     if env_path:
         candidates.append(Path(env_path))
     repo_root = Path(__file__).resolve().parents[1]
-    candidates.extend(
-        [
-            repo_root / "masterdata",
-            Path.home() / "Documents" / "4L" / "masterdata",
-            Path(r"C:\Users\HamuChan\Documents\4L\masterdata"),
-        ]
-    )
+    candidates.append(repo_root / "masterdata")
 
     for path in candidates:
         if _safe_is_dir(path):
             return path
-        try:
-            if path.exists() and path.is_symlink():
-                real_path = Path(os.path.realpath(str(path)))
-                if _safe_is_dir(real_path):
-                    return real_path
-        except Exception:
-            continue
     return None
 
 
