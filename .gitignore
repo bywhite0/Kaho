@@ -215,7 +215,6 @@ secrets/
 .vscode
 .env.local
 data/
-tests/
 
 assets
 cache
