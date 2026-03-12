@@ -6,6 +6,13 @@ from src.core.services.data_store import DataStore
 from src.core.data_manager_search import DataManagerSearchMixin
 from src.core.data_manager_stage import DataManagerStageMixin
 
+try:
+    from nonebot import logger
+except ImportError:
+    import logging
+
+    logger = logging.getLogger("DataManager")
+
 
 class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
     def __init__(self, data_dir):
@@ -15,8 +22,43 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             "cache",
             "plain",
         )
-        self.data = {}
         self.store = DataStore(data_dir)
+        self.reset_runtime_cache()
+
+        self.unit_names = {
+            100: "蓮ノ空女学院スクールアイドルクラブ",
+            101: "スリーズブーケ",
+            102: "DOLLCHESTRA",
+            103: "みらくらぱーく！",
+            105: "Edel Note",
+        }
+
+        self.STYLES = {
+            1: "Performer",
+            2: "Mood Maker",
+            3: "Cheerleader",
+            4: "Trickster",
+        }
+        self.MOODS = {1: "Happy", 2: "Neutral", 3: "Mellow"}
+
+        self.LIMITED_TYPES = {
+            0: "常驻",
+            1: "春季限定",
+            2: "夏季限定",
+            3: "秋季限定",
+            4: "冬季限定",
+            5: "毕业限定",
+            9: "生日限定",
+            11: "派对限定",
+            101: "Live Grand Prix 奖励",
+            201: "偶像活动！限定",
+            202: "音击限定",
+            203: "BanG Dream! 限定",
+            204: "混组限定",
+        }
+
+    def reset_runtime_cache(self):
+        self.data = {}
         self.card_datas = []
         self.card_series_index = {}
         self.cards_by_character_index = {}
@@ -69,46 +111,13 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         self.music_mastery_bonus_mental = {}
         self.music_mastery_bonus_heart = {}
         self.music_mastery_bonus_love = {}
-
         self.center_skills = {}
         self.center_attributes = {}
         self.rhythm_skills = {}
-
         self.token_skill_map = {}
-
+        self.card_evolution_materials = {}
+        self.card_skill_levelup_materials = {}
         self._loaded = set()
-
-        self.unit_names = {
-            100: "蓮ノ空女学院スクールアイドルクラブ",
-            101: "スリーズブーケ",
-            102: "DOLLCHESTRA",
-            103: "みらくらぱーく！",
-            105: "Edel Note",
-        }
-
-        self.STYLES = {
-            1: "Performer",
-            2: "Mood Maker",
-            3: "Cheerleader",
-            4: "Trickster",
-        }
-        self.MOODS = {1: "Happy", 2: "Neutral", 3: "Mellow"}
-
-        self.LIMITED_TYPES = {
-            0: "常驻",
-            1: "春季限定",
-            2: "夏季限定",
-            3: "秋季限定",
-            4: "冬季限定",
-            5: "毕业限定",
-            9: "生日限定",
-            11: "派对限定",
-            101: "Live Grand Prix 奖励",
-            201: "偶像活动！限定",
-            202: "音击限定",
-            203: "BanG Dream! 限定",
-            204: "混组限定",
-        }
 
     def sanitize_yaml(self, content):
         return re.sub(r":\s+-\s*$", r': "-"', content, flags=re.MULTILINE)
@@ -116,8 +125,8 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
     def load_yaml_file(self, filename):
         try:
             return self.store.load_yaml_file(filename, self.sanitize_yaml)
-        except Exception as e:
-            print(f"Error loading {filename}: {e}")
+        except Exception:
+            logger.exception(f"加载 YAML 失败: {filename}")
             return None
 
     def load_data(self):
@@ -799,6 +808,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         return result
 
     def _load_card_duet_voices(self):
+        self.card_duet_voices = {}
         entries = self.load_yaml_file("CardDuetVoice.yaml") or []
         for entry in entries:
             series_id = entry.get("CardSeriesId")
@@ -810,6 +820,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
                 self.card_duet_voices[series_id] = ids
 
     def _load_style_voices(self):
+        self.style_voice_entries = {}
         entries = self.load_yaml_file("StyleVoices.yaml") or []
         for entry in entries:
             series_id = entry.get("CardSeriesId")
@@ -834,6 +845,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             )
 
     def _load_style_movies(self):
+        self.style_movie_series = set()
         entries = self.load_yaml_file("StyleMovies.yaml") or []
         for entry in entries:
             series_id = entry.get("CardSeriesId")
@@ -907,6 +919,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         return self.music_scores.get(music_id)
 
     def _load_music_scores(self):
+        self.music_scores = {}
         entries = self.load_yaml_file("MusicScores.yaml") or []
         for entry in entries:
             music_id = entry.get("Id")
@@ -915,6 +928,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             self.music_scores[music_id] = entry
 
     def _load_learning_stages(self):
+        self.learning_stages_by_music = {}
         entries = self.load_yaml_file("MusicLearningQuestStages.yaml") or []
         for entry in entries:
             music_id = entry.get("QuestMusicsDetail")
@@ -929,6 +943,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             )
 
     def _load_quest_live_stages(self):
+        self.quest_live_stages_by_music = {}
         entries = self.load_yaml_file("StandardQuestStages.yaml") or []
         for entry in entries:
             music_id = entry.get("QuestMusicsDetail")
@@ -943,6 +958,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             )
 
     def _load_grade_live_stages(self):
+        self.grade_live_stages_by_music = {}
         entries = self.load_yaml_file("GradeQuestStages.yaml") or []
         for entry in entries:
             music_id = entry.get("QuestMusicsDetail")
@@ -957,6 +973,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             )
 
     def _load_grand_prix_stages(self):
+        self.grand_prix_stages_by_music = {}
         entries = self.load_yaml_file("GrandPrixQuestStages.yaml") or []
         for entry in entries:
             music_id = entry.get("QuestMusicsDetail")
@@ -971,6 +988,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             )
 
     def _load_live_stages(self):
+        self.live_stages = {}
         entries = self.load_yaml_file("LiveStages.yaml") or []
         for entry in entries:
             stage_id = entry.get("Id")
@@ -982,6 +1000,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             self.live_stages[stage_id] = entry
 
     def _load_standard_quest_areas(self):
+        self.standard_quest_areas = {}
         entries = self.load_yaml_file("StandardQuestAreas.yaml") or []
         for entry in entries:
             area_id = entry.get("Id")
@@ -990,6 +1009,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             self.standard_quest_areas[area_id] = entry
 
     def _load_grade_quest_seasons(self):
+        self.grade_quest_seasons = {}
         entries = self.load_yaml_file("GradeQuestSeason.yaml") or []
         for entry in entries:
             season_id = entry.get("Id")
@@ -998,6 +1018,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             self.grade_quest_seasons[season_id] = entry
 
     def _load_grade_quest_series(self):
+        self.grade_quest_series = {}
         entries = self.load_yaml_file("GradeQuestSeries.yaml") or []
         for entry in entries:
             series_id = entry.get("Id")
@@ -1006,6 +1027,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             self.grade_quest_series[series_id] = entry
 
     def _load_grand_prix_series(self):
+        self.grand_prix_series = {}
         entries = self.load_yaml_file("GrandPrixQuestSeries.yaml") or []
         for entry in entries:
             series_id = entry.get("Id")
@@ -1014,6 +1036,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             self.grand_prix_series[series_id] = entry
 
     def _load_grand_prix(self):
+        self.grand_prix = {}
         entries = self.load_yaml_file("GrandPrix.yaml") or []
         for entry in entries:
             gp_id = entry.get("Id")
@@ -1022,6 +1045,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             self.grand_prix[gp_id] = entry
 
     def _load_section_skills(self):
+        self.section_skills = {}
         entries = self.load_yaml_file("SectionSkills.yaml") or []
         for entry in entries:
             section_id = entry.get("Id")
@@ -1032,6 +1056,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             self.section_skills[section_id] = entry
 
     def _load_section_skill_effects(self):
+        self.section_skill_effects = {}
         entries = self.load_yaml_file("SectionSkillEffects.yaml") or []
         for entry in entries:
             effect_id = entry.get("Id")
@@ -1040,6 +1065,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             self.section_skill_effects[effect_id] = entry
 
     def _load_section_skill_effect_details(self):
+        self.section_skill_effect_details = {}
         entries = self.load_yaml_file("SectionSkillEffectDetails.yaml") or []
         for entry in entries:
             effect_id = entry.get("Id")
@@ -1053,6 +1079,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             self.section_skill_effect_details[effect_key].append(entry)
 
     def _load_quest_sections(self):
+        self.quest_sections_by_stage = {}
         entries = self.load_yaml_file("QuestSections.yaml") or []
         for entry in entries:
             stage_id = entry.get("QuestStagesId")
@@ -1085,6 +1112,11 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         return result
 
     def _load_stage_skills(self):
+        self.stage_skill_sets = {}
+        self.stage_skill_conditions = {}
+        self.stage_skill_condition_details = {}
+        self.stage_skill_effects = {}
+        self.stage_skill_effect_details = {}
         sets_entries = self.load_yaml_file("StageSkillSets.yaml") or []
         for entry in sets_entries:
             set_id = entry.get("Id")
@@ -1138,6 +1170,12 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             )
 
     def _load_music_mastery(self):
+        self.music_mastery_levels = {}
+        self.music_mastery_skills = {}
+        self.music_mastery_bonus_voltage = {}
+        self.music_mastery_bonus_mental = {}
+        self.music_mastery_bonus_heart = {}
+        self.music_mastery_bonus_love = {}
         skill_entries = self.load_yaml_file("MusicMasterySkill.yaml") or []
         for entry in skill_entries:
             skill_id = entry.get("Id")
