@@ -63,6 +63,7 @@ async def _(args: Message = CommandArg()):
     dm = await get_dm_instance()
     query = args.extract_plain_text().strip()
     if not query:
+        await card_cmd.finish("请输入卡牌ID。")
         return
     try:
         val = int(query)
