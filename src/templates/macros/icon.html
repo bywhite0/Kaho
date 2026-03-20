@@ -10,6 +10,10 @@
 {% set src = config.ASSETS_ICON_URL ~ '/icon_style_type_' ~ fmt_id ~ '.png' %}
 {% elif type == 'item' %}
 {% set src = config.ICON_ITEM_URL ~ '/icon_item_' ~ id ~ '.png' %}
+{% elif type == 'music_type' %}
+{% set src = config.ASSETS_ICON_URL ~ '/icon_' ~ id ~ '.png' %}
+{% elif type == 'face' %}
+{% set src = config.ICON_FACE_URL ~ '/icon_face_sd_' ~ id ~ '_01.png' %}
 {% else %}
 {% set src = config.ICON_BASE_URL ~ '/' ~ id %}
 {% endif %}

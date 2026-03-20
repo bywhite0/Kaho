@@ -49,6 +49,9 @@ class T2IService:
             "ICON_ITEM_URL": self._resolve_path(
                 os.getenv("ICON_ITEM_URL", "exports/icons/item")
             ),
+            "ICON_FACE_URL": self._resolve_path(
+                os.getenv("ICON_FACE_URL", "exports/icons/face")
+            ),
             "IMG_MUSIC_THUMBNAIL_URL": self._resolve_path(
                 os.getenv("IMG_MUSIC_THUMBNAIL_URL", "exports/images/music/thumbnail")
             ),

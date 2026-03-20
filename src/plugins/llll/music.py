@@ -8,6 +8,7 @@ from ._common import get_dm_instance
 
 music_cmd = on_command("music")
 MAX_MUSIC_RESULTS = 12
+MUSIC_TYPE_ICON_MAP = {1: "smile", 2: "pure", 3: "cool"}
 
 
 def _get_stage_info(
@@ -103,6 +104,34 @@ def _format_duration(ms_value):
         return str(ms_value)
 
 
+def _get_title_size_class(title):
+    length = len(title or "")
+    if length <= 10:
+        return "xl", length
+    if length <= 16:
+        return "lg", length
+    if length <= 24:
+        return "md", length
+    if length <= 32:
+        return "sm", length
+    return "xs", length
+
+
+def _normalize_character_ids(raw_ids):
+    result = []
+    seen = set()
+    for value in raw_ids or []:
+        try:
+            cid = int(value)
+        except (ValueError, TypeError):
+            continue
+        if cid <= 0 or cid in seen:
+            continue
+        seen.add(cid)
+        result.append(cid)
+    return result
+
+
 @music_cmd.handle()
 async def _(args: Message = CommandArg()):
     dm = await get_dm_instance()
@@ -120,6 +149,8 @@ async def _(args: Message = CommandArg()):
     musics_data = []
     for entry in results:
         music_id = entry.get("Id")
+        title = entry.get("Title") or ""
+        generations_id = entry.get("GenerationsId")
 
         # Basic Info
         singers = []
@@ -137,23 +168,42 @@ async def _(args: Message = CommandArg()):
                 supports.append(dm.get_character_name(cid))
 
         music_type = entry.get("MusicType")
-        mood_type_map = {1: "smile", 2: "pure", 3: "cool"}
-        mood_str = mood_type_map.get(music_type)
+        mood_str = MUSIC_TYPE_ICON_MAP.get(music_type)
+        title_size_class, title_len = _get_title_size_class(title)
+        singer_ids = _normalize_character_ids(entry.get("SingerCharacterId"))
+        if center_id:
+            try:
+                center_cid = int(center_id)
+            except (ValueError, TypeError):
+                center_cid = None
+            if center_cid:
+                singer_ids = [center_cid] + [
+                    cid for cid in singer_ids if cid != center_cid
+                ]
+        support_ids = _normalize_character_ids(entry.get("SupportCharacterId"))
 
         music_data = {
             "music_id": music_id,
-            "title": entry.get("Title") or "",
+            "title": title,
+            "title_len": title_len,
+            "title_size_class": title_size_class,
             "description": entry.get("Description") or "",
             "song_type": entry.get("SongType"),
             "song_type_label": dm.get_song_type_label(entry.get("SongType")),
             "mood_name": dm.MOODS.get(music_type)
             if music_type is not None
             else music_type,
+            "music_type_icon_key": mood_str,
             "play_time_ms": entry.get("PlayTime"),
             "duration_text": _format_duration(entry.get("PlayTime")),
+            "generations_id": generations_id,
+            "generation_label": f"{generations_id}期" if generations_id else "",
             "center_name": dm.get_character_name(center_id) if center_id else "-",
+            "center_id": center_id,
             "singers": singers,
             "supports": supports,
+            "singer_ids": singer_ids,
+            "support_ids": support_ids,
             "fever_section_no": entry.get("FeverSectionNo"),
             "mood_key": mood_str,
         }

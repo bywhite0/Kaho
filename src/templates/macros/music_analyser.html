@@ -1,41 +1,104 @@
 {% from "macros/icon.html" import icon %}
 {% from "macros/img.html" import res_img %}
 
-{% macro music_header(music) %}
-<div class="header" style="display: flex; gap: 20px; align-items: flex-start;">
-    <div style="flex-shrink: 0;">
-        {{ res_img(music.music_id, 'music_thumbnail', width='120', height='120', style='object-fit: cover; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3);') }}
+{% macro _value_or_dash(value) -%}
+{%- if value is not none -%}{{ value }}{%- else -%}-{%- endif -%}
+{%- endmacro %}
+
+{% macro _difficulty_item(label, level, combo, tone_class) %}
+<div class="music-difficulty-item">
+    <div class="music-difficulty-circle {{ tone_class }}">
+        <div class="music-difficulty-level">{{ _value_or_dash(level) }}</div>
+        <div class="music-difficulty-label">{{ label }}</div>
     </div>
-    <div style="flex-grow: 1;">
-        <h1 style="margin-top: 0;">{{ music.title }} <small style="font-size: 0.6em; color: #888;">(#{{ music.music_id }})</small></h1>
-        <p><strong>简介:</strong> {{ music.description }}</p>
-        <p><strong>歌曲类型:</strong> {{ music.song_type }} ({{ music.song_type_label }})</p>
-        <p><strong>气氛:</strong>
-            {% if music.mood_key %}
-            {{ icon(music.mood_key, type='mood', size=20) }}
+    <div class="music-difficulty-combo">{{ _value_or_dash(combo) }}</div>
+    <div class="music-difficulty-combo-label">COMBO</div>
+</div>
+{% endmacro %}
+
+{% macro _face_avatar(char_id, is_center=false) %}
+<div class="music-face-avatar {% if is_center %}is-center{% endif %}">
+    {% if char_id %}
+    {{ icon(char_id, type='face', size=76, class='music-face-avatar-img') }}
+    {% endif %}
+</div>
+{% endmacro %}
+
+{% macro music_header(music) %}
+<div class="music-head-grid">
+    <div class="music-cover-wrap">
+        {{ res_img(music.music_id, 'music_thumbnail', width='288', height='288', class='music-cover-img') }}
+    </div>
+    <div class="music-main-info">
+        <div class="music-title-row">
+            {% if music.music_type_icon_key or music.generation_label %}
+            <div class="music-generation-pill">
+                {% if music.music_type_icon_key %}
+                {{ icon(music.music_type_icon_key, type='music_type', size=30, class='music-generation-icon') }}
+                {% endif %}
+                {% if music.generation_label %}
+                <span class="music-generation-text">{{ music.generation_label }}</span>
+                {% endif %}
+            </div>
             {% endif %}
-            {{ music.mood_name }}
-        </p>
-        <p><strong>时长:</strong> {{ music.play_time_ms }} 毫秒 ({{ music.duration_text }})</p>
-        <p><strong>Center:</strong> {{ music.center_name }}</p>
-        {% if music.singers %}
-        <p><strong>演唱:</strong> {{ music.singers|join(', ') }}</p>
-        {% endif %}
-        {% if music.supports %}
-        <p><strong>支援角色:</strong> {{ music.supports|join(', ') }}</p>
-        {% endif %}
+            <div class="music-name-wrap">
+                <h2 class="music-name music-name-{{ music.title_size_class or 'md' }}">{{ music.title }}</h2>
+            </div>
+            <div class="music-id">#{{ music.music_id }}</div>
+        </div>
+
+        <div class="music-role-line">
+            <div class="music-role-title">演唱</div>
+            <div class="music-face-row">
+                {% for cid in music.singer_ids %}
+                {{ _face_avatar(cid, music.center_id and cid|string == music.center_id|string) }}
+                {% endfor %}
+                {% if not music.singer_ids %}
+                <span class="music-role-empty">暂无</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="music-role-line">
+            <div class="music-role-title">支援角色</div>
+            <div class="music-face-row">
+                {% for cid in music.support_ids %}
+                {{ _face_avatar(cid) }}
+                {% endfor %}
+                {% if not music.support_ids %}
+                <span class="music-role-empty">暂无</span>
+                {% endif %}
+            </div>
+        </div>
     </div>
 </div>
 {% endmacro %}
 
 {% macro music_score_block(music) %}
-{% if music.score %}
-<div class="section">
-    <div class="section-title">节奏模式</div>
-    <p><strong>难度:</strong> N{{ music.score.NormalLevel }} / H{{ music.score.HardLevel }} / E{{ music.score.ExpertLevel }} / M{{ music.score.MasterLevel }}</p>
-    <p><strong>最大连击数:</strong> N{{ music.score.NormalMaxCombo }} / H{{ music.score.HardMaxCombo }} / E{{ music.score.ExpertMaxCombo }} / M{{ music.score.MasterMaxCombo }}</p>
+<div class="music-rhythm-panel">
+    <div class="music-panel-title">节奏游戏</div>
+    {% if music.score %}
+    <div class="music-difficulty-grid">
+        {{ _difficulty_item('NORMAL', music.score.NormalLevel, music.score.NormalMaxCombo, 'tone-normal') }}
+        {{ _difficulty_item('HARD', music.score.HardLevel, music.score.HardMaxCombo, 'tone-hard') }}
+        {{ _difficulty_item('EXPERT', music.score.ExpertLevel, music.score.ExpertMaxCombo, 'tone-expert') }}
+        {{ _difficulty_item('MASTER', music.score.MasterLevel, music.score.MasterMaxCombo, 'tone-master') }}
+    </div>
+    {% else %}
+    <div class="music-empty-line">无节奏难度数据</div>
+    {% endif %}
+
+    <div class="music-other-info">
+        <div class="music-info-row">
+            <span class="music-info-label">类型</span>
+            <span class="music-info-value">{{ music.song_type_label or music.song_type or '-' }}</span>
+        </div>
+        <div class="music-info-row">
+            <span class="music-info-label">时长</span>
+            <span class="music-info-value">{{ music.play_time_ms }} 毫秒 ({{ music.duration_text }})</span>
+        </div>
+    </div>
 </div>
-{% endif %}
 {% endmacro %}
 
 {% macro music_stage_block(music) %}
@@ -98,45 +161,43 @@
 {% endmacro %}
 
 {% macro music_bp_analyser(music) %}
-{% if music.chart %}
-<div class="section">
-    <div class="section-title">歌曲分析仪</div>
-    <div style="margin-bottom: 5px; font-size: 0.8em; color: #666; text-align: right;">时长: {{ music.chart.total_time_sec }}s</div>
+<div class="music-live-panel">
+    <div class="music-panel-title">Live 分析仪</div>
+    {% if music.chart %}
+    <div class="music-live-time">时长: {{ music.chart.total_time_sec }}s</div>
+    <div class="music-live-chart">
+        <div class="music-live-grid grid-top"></div>
+        <div class="music-live-grid grid-mid"></div>
+        <div class="music-live-grid grid-bottom"></div>
 
-    <div style="position: relative; width: 100%; height: 150px; background-color: #333; border-radius: 4px; overflow: hidden; font-family: sans-serif;">
-        <div style="position: absolute; top: 10%; width: 100%; border-top: 1px dashed rgba(255,255,255,0.2);"></div>
-        <div style="position: absolute; top: 50%; width: 100%; border-top: 1px dashed rgba(255,255,255,0.5);"></div>
-        <div style="position: absolute; top: 90%; width: 100%; border-top: 1px dashed rgba(255,255,255,0.2);"></div>
-
-        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex;">
+        <div class="music-live-sections">
             {% for section in music.chart.sections %}
-            <div style="width: {{ section.percentage }}%; border-right: 2px solid #e91e63; box-sizing: border-box; position: relative; {% if loop.index == music.fever_section_no %}background-color: rgba(255, 235, 59, 0.15);{% endif %}">
-                <div style="position: absolute; top: 2px; left: 4px; font-size: 0.7em; color: rgba(255,255,255,0.7);">
-                    Sec {{ section.index }}
-                </div>
-                <div style="position: absolute; bottom: 4px; width: 100%; text-align: center; color: #ddd; font-size: 0.75em; text-shadow: 1px 1px 2px #000;">
-                    <div style="font-weight: bold; color: #ff5252;">♥ {{ section.beat_count }}</div>
-                    <div style="font-size: 0.9em;">{{ section.duration_sec }}s</div>
+            <div class="music-live-section {% if loop.index == music.fever_section_no|default(0)|int %}is-fever{% endif %}"
+                style="width: {{ section.percentage }}%;">
+                <div class="music-live-sec-index">Sec {{ section.index }}</div>
+                <div class="music-live-sec-bottom">
+                    <div class="music-live-heart">♥ {{ section.beat_count }}</div>
+                    <div class="music-live-sec-time">{{ section.duration_sec }}s</div>
                 </div>
             </div>
             {% endfor %}
         </div>
 
-        <div style="position: absolute; top: 42%; left: 8px; font-weight: bold; color: white; font-size: 1.1em; text-shadow: 0 0 4px #000; z-index: 10;">
-            START
-        </div>
-        <div style="position: absolute; top: 42%; right: 8px; font-weight: bold; color: white; font-size: 1.1em; text-shadow: 0 0 4px #000; z-index: 10;">
-            GOAL
-        </div>
+        <div class="music-live-mark live-start">START</div>
+        <div class="music-live-mark live-goal">GOAL</div>
 
         {% if music.chart.moods %}
-        <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="position: absolute; top: 0; left: 0; pointer-events: none;">
-            <polyline points="{% for p in music.chart.moods %}{{ p.x }},{{ p.y }} {% endfor %}" style="fill:none; stroke: white; stroke-width: 3; stroke-linejoin: round;" vector-effect="non-scaling-stroke" />
+        <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" class="music-live-svg">
+            <polyline points="{% for p in music.chart.moods %}{{ p.x }},{{ p.y }} {% endfor %}"
+                style="fill:none; stroke: white; stroke-width: 2.5; stroke-linejoin: round;"
+                vector-effect="non-scaling-stroke" />
         </svg>
         {% endif %}
     </div>
+    {% else %}
+    <div class="music-empty-line">无分析数据</div>
+    {% endif %}
 </div>
-{% endif %}
 {% endmacro %}
 
 {% macro music_mastery_block(music) %}
