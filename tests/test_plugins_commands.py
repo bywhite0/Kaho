@@ -185,6 +185,17 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
                 await music_module._(_DummyMessage(query))
 
         self.assertEqual(fake_t2i.template_name, "music.html")
+        first_music = fake_t2i.payload["musics"][0]
+        self.assertIn("generations_id", first_music)
+        self.assertIn("generation_label", first_music)
+        self.assertIn("music_type_icon_key", first_music)
+        self.assertIn("center_id", first_music)
+        self.assertIn("singer_ids", first_music)
+        self.assertIn("support_ids", first_music)
+        self.assertIn("title_size_class", first_music)
+        self.assertIn("title_len", first_music)
+        self.assertIn(first_music["title_size_class"], {"xl", "lg", "md", "sm", "xs"})
+        self.assertEqual(first_music["title_len"], len(first_music["title"]))
         self.assertIsInstance(ctx.exception.payload, MessageSegment)
         self.assertEqual(ctx.exception.payload.type, "image")
 
@@ -228,4 +239,3 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
