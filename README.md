@@ -90,4 +90,8 @@ This project is licensed under the GNU Affero General Public License v3.0 (AGPL-
 
 ## Disclaimer
 
-This project is an unofficial fan-made tool for Link! Like! LoveLive!. It is not affiliated with, endorsed by, or associated with Bandai Namco Music Live Inc., Odd No. Inc., or the Love Live! Project. All game assets, characters, and related intellectual property belong to their respective owners. This software is provided "as is" without any warranty. Use at your own risk.
+- This repository is an unofficial project and is not affiliated with the game operator or related rights holders.
+- The repository contents are primarily intended for personal study, research, and tooling development.
+- The author provides no warranty regarding correctness, completeness, long-term compatibility, or fitness for any particular purpose.
+- Users are responsible for ensuring that their usage complies with local laws, platform rules, and third-party rights requirements.
+- This software is provided "as is" without any warranty. Use at your own risk.
