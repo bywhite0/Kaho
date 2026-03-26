@@ -265,38 +265,29 @@ class GameApiService:
                 return dt
         return None
 
-    def _classify_live_state(self, item: Dict[str, Any], now: datetime) -> str:
-        close_time = self._pick_first_time(item, ("close_time", "end_time", "live_end_time"))
-        if close_time is not None and now >= close_time:
-            return "ended"
+    def _extract_dict_items(self, values: Any) -> List[Dict[str, Any]]:
+        if not isinstance(values, list):
+            return []
+        result: List[Dict[str, Any]] = []
+        for item in values:
+            if isinstance(item, dict):
+                result.append(dict(item))
+        return result
 
-        open_time = self._pick_first_time(
-            item,
-            ("open_time", "start_time", "scheduled_start_time", "live_start_time"),
-        )
-        if open_time is not None:
-            if now < open_time:
-                return "upcoming"
-            return "live"
+    def _resolve_live_type(self, item: Dict[str, Any]) -> int:
+        live_type = item.get("live_type")
+        if isinstance(live_type, int):
+            return live_type
+        try:
+            return int(str(live_type).strip())
+        except (TypeError, ValueError):
+            return 0
 
-        return "unknown"
-
-    def _is_enterable(self, item: Dict[str, Any], now: datetime) -> bool:
-        open_time = self._pick_first_time(
-            item,
-            ("open_time", "start_time", "scheduled_start_time", "live_start_time"),
-        )
-        close_time = self._pick_first_time(item, ("close_time", "end_time", "live_end_time"))
-
-        if open_time is not None and now < open_time:
+    def _is_enterable_by_open_time(self, item: Dict[str, Any], now: datetime) -> bool:
+        open_time = self._pick_first_time(item, ("open_time",))
+        if open_time is None:
             return False
-        if close_time is not None and now >= close_time:
-            return False
-
-        if open_time is not None or close_time is not None:
-            return True
-
-        return self._classify_live_state(item, now) == "live"
+        return now >= open_time
 
     def _extract_with_live_items(self, values: Any) -> List[Dict[str, Any]]:
         result: List[Dict[str, Any]] = []
@@ -305,20 +296,30 @@ class GameApiService:
         for item in values:
             if not isinstance(item, dict):
                 continue
-            live_type = item.get("live_type")
+            live_type = self._resolve_live_type(item)
             if live_type != 2:
                 continue
             result.append(dict(item))
         return result
+
+    def _extract_home_trailer_groups(
+        self,
+        home_data: Dict[str, Any],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        live_archive_items = self._extract_dict_items(home_data.get("live_archive_list"))
+        trailer_archive_items = self._extract_dict_items(home_data.get("trailer_archive_list"))
+        return (
+            live_archive_items,
+            trailer_archive_items,
+            [*live_archive_items, *trailer_archive_items],
+        )
 
     def _extract_with_live_home_groups(
         self,
         home_data: Dict[str, Any],
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
         live_archive_items = self._extract_with_live_items(home_data.get("live_archive_list"))
-        trailer_archive_items = self._extract_with_live_items(
-            home_data.get("trailer_archive_list")
-        )
+        trailer_archive_items = self._extract_with_live_items(home_data.get("trailer_archive_list"))
         return (
             live_archive_items,
             trailer_archive_items,
@@ -327,6 +328,81 @@ class GameApiService:
 
     def _pick_latest_sort_time(self, item: Dict[str, Any]) -> Optional[datetime]:
         return self._parse_time(item.get("live_start_time"))
+
+    def _build_enter_detail_item(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "live_id": str(item.get("live_id") or "").strip(),
+            "live_type": self._resolve_live_type(item),
+            "name": str(item.get("name") or "").strip(),
+            "status": "skipped",
+            "detail": None,
+            "detail_source": "none",
+            "errors": [],
+        }
+
+    async def _fetch_enter_detail(
+        self,
+        client: httpx.AsyncClient,
+        credential: Dict[str, Any],
+        session_token: str,
+        item: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        result = self._build_enter_detail_item(item)
+        live_id = str(result["live_id"])
+        live_type = int(result["live_type"])
+        errors: List[str] = result["errors"]
+
+        if not live_id:
+            errors.append("missing_live_id")
+            return result
+
+        if live_type == 2:
+            try:
+                detail = await self._post_json(
+                    client,
+                    "/withlive/enter",
+                    {"live_id": live_id},
+                    credential,
+                    session_token=session_token,
+                )
+                result["detail"] = detail
+                result["detail_source"] = "withlive_enter"
+                result["status"] = "ok"
+            except Exception as exc:
+                errors.append(f"withlive_enter:{exc}")
+                result["status"] = "error"
+            return result
+
+        if live_type == 1:
+            try:
+                await self._post_json(
+                    client,
+                    "/feslive/lobby",
+                    {"live_id": live_id},
+                    credential,
+                    session_token=session_token,
+                )
+            except Exception as exc:
+                errors.append(f"feslive_lobby:{exc}")
+
+            try:
+                detail = await self._post_json(
+                    client,
+                    "/feslive/enter",
+                    {"live_id": live_id},
+                    credential,
+                    session_token=session_token,
+                )
+                result["detail"] = detail
+                result["detail_source"] = "feslive_enter"
+                result["status"] = "ok"
+            except Exception as exc:
+                errors.append(f"feslive_enter:{exc}")
+                result["status"] = "error"
+            return result
+
+        errors.append(f"unsupported_live_type:{live_type}")
+        return result
 
     def _archive_identity(self, item: Dict[str, Any]) -> str:
         archives_id = str(item.get("archives_id") or "").strip()
@@ -396,16 +472,20 @@ class GameApiService:
         client: httpx.AsyncClient,
         credential: Dict[str, Any],
         session_token: str,
+        limit: int = 1,
+        live_type: Optional[int] = 2,
+        error_key: str = "archive_get_archive_list",
     ) -> Tuple[Optional[Dict[str, Any]], List[str]]:
         errors: List[str] = []
         payload = {
             "order": "desc",
             "sort": "live_start_time",
-            "limit": 1,
+            "limit": limit,
             "offset": 0,
-            "live_type": 2,
             "characters": [],
         }
+        if live_type is not None:
+            payload["live_type"] = live_type
         try:
             data = await self._post_json(
                 client,
@@ -415,17 +495,17 @@ class GameApiService:
                 session_token=session_token,
             )
         except Exception as exc:
-            errors.append(f"archive_get_archive_list:{exc}")
+            errors.append(f"{error_key}:{exc}")
             return None, errors
 
         archive_list = data.get("archive_list")
         if not isinstance(archive_list, list) or not archive_list:
-            errors.append("archive_get_archive_list:empty")
+            errors.append(f"{error_key}:empty")
             return None, errors
 
         first_item = archive_list[0]
         if not isinstance(first_item, dict):
-            errors.append("archive_get_archive_list:invalid_item")
+            errors.append(f"{error_key}:invalid_item")
             return None, errors
         return dict(first_item), errors
 
@@ -474,11 +554,21 @@ class GameApiService:
         credential = self.load_credential(config_path)
 
         fetch_errors: List[str] = []
+        home_trailer_live_list: List[Dict[str, Any]] = []
+        home_trailer_trailer_list: List[Dict[str, Any]] = []
+        home_trailer_list: List[Dict[str, Any]] = []
+        home_trailer_enterable_list: List[Dict[str, Any]] = []
+        home_trailer_enter_details: List[Dict[str, Any]] = []
         with_live_home_live_list: List[Dict[str, Any]] = []
         with_live_home_trailer_list: List[Dict[str, Any]] = []
         with_live_home_list: List[Dict[str, Any]] = []
         home_fetched = False
         latest_from_archive_list: Optional[Dict[str, Any]] = None
+        latest_archive_any: Optional[Dict[str, Any]] = None
+        latest_archive_any_meta: Dict[str, Any] = {
+            "source": "none",
+            "errors": [],
+        }
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             session_token = str(credential.get("session_token") or "").strip()
@@ -501,10 +591,33 @@ class GameApiService:
                     session_token=session_token,
                 )
                 (
+                    home_trailer_live_list,
+                    home_trailer_trailer_list,
+                    home_trailer_list,
+                ) = self._extract_home_trailer_groups(home_data)
+                (
                     with_live_home_live_list,
                     with_live_home_trailer_list,
                     with_live_home_list,
                 ) = self._extract_with_live_home_groups(home_data)
+                now = datetime.now(timezone.utc)
+                home_trailer_enterable_list = [
+                    item
+                    for item in home_trailer_list
+                    if self._is_enterable_by_open_time(item, now)
+                ]
+                for trailer in home_trailer_enterable_list:
+                    detail_item = await self._fetch_enter_detail(
+                        client,
+                        credential,
+                        session_token,
+                        trailer,
+                    )
+                    home_trailer_enter_details.append(detail_item)
+                    for error in detail_item.get("errors") or []:
+                        fetch_errors.append(
+                            f"enter_detail:{detail_item.get('live_id') or '-'}:{error}"
+                        )
                 home_fetched = True
             except Exception as exc:
                 fetch_errors.append(f"archive_get_home:{exc}")
@@ -520,11 +633,35 @@ class GameApiService:
             )
             fetch_errors.extend(archive_list_errors)
 
+            latest_archive_any_from_list, latest_archive_any_errors = (
+                await self._fetch_latest_archive_from_archive_list(
+                    client,
+                    credential,
+                    session_token,
+                    limit=4,
+                    live_type=None,
+                    error_key="archive_get_archive_list_any",
+                )
+            )
+            fetch_errors.extend(latest_archive_any_errors)
+            if isinstance(latest_archive_any_from_list, dict):
+                latest_archive_any = dict(latest_archive_any_from_list)
+                latest_archive_any_meta = {
+                    "source": "archive_get_archive_list",
+                    "errors": latest_archive_any_errors,
+                }
+
             latest_item = (
                 dict(latest_from_archive_list)
                 if isinstance(latest_from_archive_list, dict)
                 else self._pick_latest_archive_item(latest_candidates)
             )
+            if latest_archive_any is None and isinstance(latest_item, dict):
+                latest_archive_any = dict(latest_item)
+                latest_archive_any_meta = {
+                    "source": "latest_archive",
+                    "errors": latest_archive_any_errors,
+                }
             latest_detail: Optional[Dict[str, Any]] = None
             latest_detail_meta = {
                 "source": "none",
@@ -549,6 +686,29 @@ class GameApiService:
                     "errors": errors,
                 }
 
+        home_with_count = sum(
+            1 for item in home_trailer_list if self._resolve_live_type(item) == 2
+        )
+        home_fes_count = sum(
+            1 for item in home_trailer_list if self._resolve_live_type(item) == 1
+        )
+        enterable_with_count = sum(
+            1
+            for item in home_trailer_enterable_list
+            if self._resolve_live_type(item) == 2
+        )
+        enterable_fes_count = sum(
+            1
+            for item in home_trailer_enterable_list
+            if self._resolve_live_type(item) == 1
+        )
+        enter_detail_success_count = sum(
+            1 for item in home_trailer_enter_details if item.get("status") == "ok"
+        )
+        enter_detail_failed_count = sum(
+            1 for item in home_trailer_enter_details if item.get("status") == "error"
+        )
+
         updated_at = datetime.now().astimezone().isoformat(timespec="seconds")
         snapshot = {
             "updated_at": updated_at,
@@ -560,14 +720,29 @@ class GameApiService:
                 "archive_get_home_count": len(with_live_home_list),
                 "archive_get_home_live_count": len(with_live_home_live_list),
                 "archive_get_home_trailer_count": len(with_live_home_trailer_list),
+                "archive_get_home_total_count": len(home_trailer_list),
+                "archive_get_home_with_count": home_with_count,
+                "archive_get_home_fes_count": home_fes_count,
+                "enterable_total_count": len(home_trailer_enterable_list),
+                "enterable_with_count": enterable_with_count,
+                "enterable_fes_count": enterable_fes_count,
+                "enter_detail_success_count": enter_detail_success_count,
+                "enter_detail_failed_count": enter_detail_failed_count,
                 "home_fetched": home_fetched,
             },
+            "home_trailer_live_list": home_trailer_live_list,
+            "home_trailer_trailer_list": home_trailer_trailer_list,
+            "home_trailer_list": home_trailer_list,
+            "home_trailer_enterable_list": home_trailer_enterable_list,
+            "home_trailer_enter_details": home_trailer_enter_details,
             "with_live_archive_live_home": with_live_home_live_list,
             "with_live_archive_trailer_home": with_live_home_trailer_list,
             "with_live_archive_home": with_live_home_list,
             "latest_archive": latest_item,
             "latest_archive_detail": latest_detail,
             "latest_archive_detail_meta": latest_detail_meta,
+            "latest_archive_any": latest_archive_any,
+            "latest_archive_any_meta": latest_archive_any_meta,
         }
 
         if old_snapshot:

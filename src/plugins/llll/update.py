@@ -31,11 +31,24 @@ async def _(args: Message = CommandArg()):
     source = result.get("source") or {}
     updated_at = str(result.get("updated_at") or "-")
     cache_path = str(result.get("cache_path") or "-")
-    latest_archive = result.get("latest_archive") or {}
-    latest_meta = result.get("latest_archive_detail_meta") or {}
-    home_total = int(source.get("archive_get_home_count") or 0)
-    home_live = int(source.get("archive_get_home_live_count") or 0)
-    home_trailer = int(source.get("archive_get_home_trailer_count") or 0)
+    latest_archive = result.get("latest_archive_any") or result.get("latest_archive") or {}
+    latest_meta = result.get("latest_archive_any_meta") or {}
+    home_total = int(
+        source.get("archive_get_home_total_count")
+        or source.get("archive_get_home_count")
+        or 0
+    )
+    home_with = int(
+        source.get("archive_get_home_with_count")
+        or source.get("archive_get_home_live_count")
+        or 0
+    )
+    home_fes = int(source.get("archive_get_home_fes_count") or 0)
+    enterable_total = int(source.get("enterable_total_count") or 0)
+    enterable_with = int(source.get("enterable_with_count") or 0)
+    enterable_fes = int(source.get("enterable_fes_count") or 0)
+    detail_success = int(source.get("enter_detail_success_count") or 0)
+    detail_failed = int(source.get("enter_detail_failed_count") or 0)
     latest_archive_id = str(
         latest_archive.get("archives_id")
         or latest_archive.get("live_id")
@@ -43,17 +56,24 @@ async def _(args: Message = CommandArg()):
     )
     latest_archive_name = str(latest_archive.get("name") or "-")
     latest_source = str(latest_meta.get("source") or "-")
-    latest_status = "已获取" if latest_archive and latest_meta.get("source") != "none" else "未获取"
+    fetch_errors = source.get("fetch_errors")
+    if not isinstance(fetch_errors, list):
+        fetch_errors = []
 
     output = (
         "with_live 数据刷新完成\n"
         f"home 总场次: {home_total}\n"
-        f"home live_archive: {home_live}\n"
-        f"home trailer_archive: {home_trailer}\n"
+        f"home With×MEETS: {home_with}\n"
+        f"home Fes×LIVE: {home_fes}\n"
+        f"可进场总数: {enterable_total}\n"
+        f"可进场 With×MEETS: {enterable_with}\n"
+        f"可进场 Fes×LIVE: {enterable_fes}\n"
+        f"详情成功: {detail_success}\n"
+        f"详情失败: {detail_failed}\n"
         f"最新 Archive ID: {latest_archive_id}\n"
         f"最新 Archive 标题: {latest_archive_name}\n"
-        f"最新详情: {latest_status}\n"
-        f"详情来源: {latest_source}\n"
+        f"最新 Archive 来源: {latest_source}\n"
+        f"抓取告警: {len(fetch_errors)}\n"
         f"缓存文件: {cache_path}\n"
         f"刷新时间: {updated_at}"
     )

@@ -3,7 +3,7 @@ import hashlib
 import json
 import os
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -23,8 +23,6 @@ except ImportError:
 
 
 class WithLiveImageService:
-    JST = timezone(timedelta(hours=9), "JST")
-
     def __init__(self, project_root: Optional[Path] = None, timeout: float = 15.0):
         if project_root is None:
             self.project_root = Path(__file__).resolve().parents[3]
@@ -88,13 +86,19 @@ class WithLiveImageService:
         return {}
 
     def _extract_archives(self, snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
+        trailer_items = self._to_dict_list(snapshot.get("home_trailer_list"))
+        if trailer_items:
+            return trailer_items
+
         home_items = self._to_dict_list(snapshot.get("with_live_archive_home"))
         if home_items:
             return home_items
 
         live_items = self._to_dict_list(snapshot.get("with_live_archive_live_home"))
-        trailer_items = self._to_dict_list(snapshot.get("with_live_archive_trailer_home"))
-        return [*live_items, *trailer_items]
+        with_live_trailer_items = self._to_dict_list(
+            snapshot.get("with_live_archive_trailer_home")
+        )
+        return [*live_items, *with_live_trailer_items]
 
     def _to_dict_list(self, values: Any) -> List[Dict[str, Any]]:
         if not isinstance(values, list):
@@ -111,9 +115,10 @@ class WithLiveImageService:
             title = str(item.get("name") or "").strip()
             if not title:
                 continue
+            live_status = self._detect_status(item)
             result.append(
                 {
-                    "status": self._detect_status(item),
+                    "status": live_status,
                     "time": self._format_time(item),
                     "thumb_url": str(item.get("thumbnail_image_url") or "").strip(),
                     "title": title,
@@ -124,16 +129,33 @@ class WithLiveImageService:
     def _format_time(self, item: Dict[str, Any]) -> str:
         dt_live_start = self._parse_time(item.get("live_start_time"))
         if dt_live_start is None:
-            return "時間未定"
-        return dt_live_start.astimezone(self.JST).strftime("%Y/%m/%d %H:%M に開始予定")
+            return "时间未定"
+        now = datetime.now(timezone.utc)
+        close_time = self._parse_time(
+            item.get("close_time")
+            or item.get("live_end_time")
+            or item.get("end_time")
+        )
+        if now >= dt_live_start and (close_time is None or now < close_time):
+            return dt_live_start.astimezone().strftime("%H:%M 起直播中")
+        return dt_live_start.astimezone().strftime("预计 %Y/%m/%d %H:%M 开始")
 
     def _detect_status(self, item: Dict[str, Any]) -> str:
-        actual_start = self._parse_time(item.get("start_time"))
-        actual_end = self._parse_time(item.get("end_time"))
-        if actual_end is not None:
-            return "Archive"
-        if actual_start is not None:
-            return "Now Streaming"
+        now = datetime.now(timezone.utc)
+        open_time = self._parse_time(item.get("open_time"))
+        close_time = self._parse_time(
+            item.get("close_time")
+            or item.get("live_end_time")
+            or item.get("end_time")
+        )
+        start_time = self._parse_time(item.get("live_start_time"))
+
+        if close_time is not None and now >= close_time:
+            return "Closed"
+        if open_time is not None and now >= open_time:
+            return "Upcoming"
+        if start_time is not None and now >= start_time:
+            return "Live Now!!"
         return "Upcoming"
 
     def _parse_time(self, value: Any) -> Optional[datetime]:
@@ -242,7 +264,8 @@ class _WithLiveImageRenderer:
     def __init__(self, icon_path: Path):
         self.font_title = self._load_font_safe(42)
         self.font_status = self._load_font_safe(44, weight="Bold")
-        self.font_meta = self._load_font_safe(30, weight="Bold")
+        self.font_header = self._load_cn_font_safe(44, weight="Bold")
+        self.font_meta = self._load_cn_font_safe(30, weight="Bold")
         self.icon_status_img = self._load_icon(icon_path)
 
     def render(self, items: List[Dict[str, str]], thumbnails: List[Image.Image]) -> bytes:
@@ -277,9 +300,9 @@ class _WithLiveImageRenderer:
         pattern_draw = ImageDraw.Draw(overlay)
         pattern_draw.text(
             (224, 16),
-            "スクールアイドルコネクト",
+            "学园偶像连结",
             fill="#FFFFFF",
-            font=self.font_status,
+            font=self.font_header,
         )
         self._draw_svg_polygons(pattern_draw, 1080, 0, self.HEADER_H)
         full_rect = Image.alpha_composite(full_rect, overlay)
@@ -352,6 +375,47 @@ class _WithLiveImageRenderer:
             return int(box[2] - box[0])
         except AttributeError:
             return int(draw.textlength(text, font=font))
+
+    @staticmethod
+    def _load_cn_font_safe(size: int, weight: str = "Regular") -> ImageFont.ImageFont:
+        if weight == "Bold":
+            font_names = [
+                "NotoSansSC-Bold.otf",
+                "NotoSansSC-Bold.ttf",
+                "Noto Sans SC Bold",
+                "NotoSansCJKsc-Bold.otf",
+                "NotoSansCJK-Bold.ttc",
+                "SourceHanSansSC-Bold.otf",
+                "SourceHanSansCN-Bold.otf",
+                "PingFang SC Bold",
+                "Microsoft YaHei Bold",
+                "msyhbd.ttc",
+                "simhei.ttf",
+                "simsun.ttc",
+            ]
+        else:
+            font_names = [
+                "NotoSansSC-Regular.otf",
+                "NotoSansSC-Regular.ttf",
+                "Noto Sans SC Regular",
+                "Noto Sans SC",
+                "NotoSansCJKsc-Regular.otf",
+                "NotoSansCJK-Regular.ttc",
+                "SourceHanSansSC-Regular.otf",
+                "SourceHanSansCN-Regular.otf",
+                "PingFang SC",
+                "Microsoft YaHei",
+                "msyh.ttc",
+                "simsun.ttc",
+                "simhei.ttf",
+            ]
+
+        for font_name in font_names:
+            try:
+                return ImageFont.truetype(font_name, size)
+            except IOError:
+                continue
+        return ImageFont.load_default()
 
     @staticmethod
     def _load_font_safe(size: int, weight: str = "Regular") -> ImageFont.ImageFont:

@@ -170,18 +170,16 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
             service = GameApiService(project_root=self.root)
             self.assertEqual(service.resolve_config_path(), env_cfg.resolve())
 
-    async def test_refresh_archive_only_and_pick_latest_detail(self):
+    async def test_refresh_collects_enterable_details_and_latest_any(self):
         config_path = self.root / "cache" / "game_api" / "config.json"
         self._write_config(config_path, token="token-ok")
         service = GameApiService(project_root=self.root)
 
         now = datetime.now(timezone.utc)
-        live_open = (now - timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
-        live_close = (now + timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
-        latest_live_start = (now + timedelta(hours=2)).isoformat().replace("+00:00", "Z")
-        latest_live_open = (now + timedelta(hours=1)).isoformat().replace("+00:00", "Z")
-        trailer_start = (now + timedelta(hours=4)).isoformat().replace("+00:00", "Z")
-        trailer_open = (now + timedelta(hours=3)).isoformat().replace("+00:00", "Z")
+        open_past = (now - timedelta(minutes=15)).isoformat().replace("+00:00", "Z")
+        open_future = (now + timedelta(hours=2)).isoformat().replace("+00:00", "Z")
+        start_soon = (now + timedelta(minutes=20)).isoformat().replace("+00:00", "Z")
+        start_late = (now + timedelta(hours=3)).isoformat().replace("+00:00", "Z")
 
         fake_client = _RouteClient(
             {
@@ -193,39 +191,77 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
                         {
                             "live_archive_list": [
                                 {
-                                    "archives_id": "A1",
-                                    "live_id": "L1",
+                                    "archives_id": "W1",
+                                    "live_id": "WLIVE1",
                                     "live_type": 2,
-                                    "name": "live-one",
-                                    "open_time": live_open,
-                                    "close_time": live_close,
-                                    "live_start_time": live_open,
+                                    "name": "with-enterable",
+                                    "open_time": open_past,
+                                    "live_start_time": start_soon,
+                                    "thumbnail_image_url": "https://example.com/w1.jpg",
                                 },
                                 {
-                                    "archives_id": "IGNORE",
-                                    "live_id": "X1",
+                                    "archives_id": "F1",
+                                    "live_id": "FLIVE1",
                                     "live_type": 1,
-                                    "name": "not-with-live",
+                                    "name": "fes-enterable",
+                                    "open_time": open_past,
+                                    "live_start_time": start_soon,
+                                    "thumbnail_image_url": "https://example.com/f1.jpg",
                                 },
                                 {
-                                    "archives_id": "A3",
-                                    "live_id": "L3",
+                                    "archives_id": "W2",
+                                    "live_id": "WLIVE2",
                                     "live_type": 2,
-                                    "name": "latest-live-archive",
-                                    "open_time": latest_live_open,
-                                    "live_start_time": latest_live_start,
+                                    "name": "with-future",
+                                    "open_time": open_future,
+                                    "live_start_time": start_late,
+                                    "thumbnail_image_url": "https://example.com/w2.jpg",
                                 },
                             ],
-                            "trailer_archive_list": [
+                            "trailer_archive_list": [],
+                        },
+                    ),
+                ],
+                "/withlive/enter": [
+                    lambda url, request_json, _headers: _resp(
+                        url,
+                        200,
+                        {"live_id": request_json["live_id"], "with_info": "ok"},
+                    )
+                ],
+                "/feslive/lobby": [
+                    lambda url, _json, _headers: _resp(url, 200, {"ok": True})
+                ],
+                "/feslive/enter": [
+                    lambda url, request_json, _headers: _resp(
+                        url,
+                        200,
+                        {"live_id": request_json["live_id"], "fes_info": "ok"},
+                    )
+                ],
+                "/archive/get_archive_list": [
+                    lambda url, _json, _headers: _resp(
+                        url,
+                        200,
+                        {"archive_list": [{"archives_id": "W2", "live_type": 2}]},
+                    ),
+                    lambda url, _json, _headers: _resp(
+                        url,
+                        200,
+                        {
+                            "archive_list": [
                                 {
-                                    "archives_id": "A2",
-                                    "live_id": "L2",
+                                    "archives_id": "ANY1",
+                                    "live_id": "ANYLIVE1",
+                                    "live_type": 1,
+                                    "name": "any-latest",
+                                },
+                                {
+                                    "archives_id": "ANY2",
+                                    "live_id": "ANYLIVE2",
                                     "live_type": 2,
-                                    "name": "upcoming-two",
-                                    "open_time": trailer_open,
-                                    "live_start_time": trailer_start,
-                                }
-                            ],
+                                },
+                            ]
                         },
                     ),
                 ],
@@ -233,54 +269,58 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
                     lambda url, request_json, _headers: _resp(
                         url,
                         200,
-                        {
-                            "archives_id": request_json["archives_id"],
-                            "title": "latest-detail",
-                        },
-                    )
-                ],
-                "/archive/get_archive_list": [
-                    lambda url, _json, _headers: _resp(
-                        url,
-                        200,
-                        {
-                            "archive_list": [
-                                {
-                                    "archives_id": "A3",
-                                    "live_id": "L3",
-                                    "live_type": 2,
-                                    "name": "latest-live-archive",
-                                    "open_time": latest_live_open,
-                                    "live_start_time": latest_live_start,
-                                }
-                            ]
-                        },
+                        {"archives_id": request_json["archives_id"], "detail": "ok"},
                     )
                 ],
             }
         )
 
-        with patch("src.core.services.game_api.httpx.AsyncClient", lambda *args, **kwargs: fake_client):
+        with patch(
+            "src.core.services.game_api.httpx.AsyncClient",
+            lambda *args, **kwargs: fake_client,
+        ):
             result = await service.refresh_with_live(command_args="with_live")
 
         source = result["source"]
-        self.assertEqual(source["archive_get_home_count"], 3)
-        self.assertEqual(source["archive_get_home_live_count"], 2)
-        self.assertEqual(source["archive_get_home_trailer_count"], 1)
-        self.assertEqual(result["latest_archive"]["archives_id"], "A3")
-        self.assertEqual(result["latest_archive_detail"]["archives_id"], "A3")
+        self.assertEqual(source["archive_get_home_total_count"], 3)
+        self.assertEqual(source["archive_get_home_with_count"], 2)
+        self.assertEqual(source["archive_get_home_fes_count"], 1)
+        self.assertEqual(source["enterable_total_count"], 2)
+        self.assertEqual(source["enterable_with_count"], 1)
+        self.assertEqual(source["enterable_fes_count"], 1)
+        self.assertEqual(source["enter_detail_success_count"], 2)
+        self.assertEqual(source["enter_detail_failed_count"], 0)
+        self.assertEqual(len(result["home_trailer_list"]), 3)
+        self.assertEqual(len(result["home_trailer_enterable_list"]), 2)
+        self.assertEqual(len(result["home_trailer_enter_details"]), 2)
+        self.assertIn("with_live_archive_home", result)
+
+        detail_sources = {
+            item["detail_source"]
+            for item in result["home_trailer_enter_details"]
+            if item.get("status") == "ok"
+        }
+        self.assertEqual(detail_sources, {"withlive_enter", "feslive_enter"})
+        self.assertEqual(result["latest_archive_any"]["archives_id"], "ANY1")
+        self.assertEqual(
+            result["latest_archive_any_meta"]["source"],
+            "archive_get_archive_list",
+        )
+
+        self.assertEqual(result["latest_archive"]["archives_id"], "W2")
+        self.assertEqual(result["latest_archive_detail"]["archives_id"], "W2")
         self.assertEqual(
             result["latest_archive_detail_meta"]["source"],
             "archive_get_with_archive_data",
         )
-        self.assertNotIn("summary", result)
-
-        detail_call = next(
-            call for call in fake_client.calls if call["path"] == "/archive/get_with_archive_data"
-        )
-        self.assertEqual(detail_call["json"]["archives_id"], "A3")
         self.assertTrue(
-            all(not call["path"].startswith("/withlive/") for call in fake_client.calls)
+            any(call["path"] == "/withlive/enter" for call in fake_client.calls)
+        )
+        self.assertTrue(
+            any(call["path"] == "/feslive/lobby" for call in fake_client.calls)
+        )
+        self.assertTrue(
+            any(call["path"] == "/feslive/enter" for call in fake_client.calls)
         )
 
     async def test_refresh_token_when_session_invalid(self):
@@ -302,16 +342,21 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
                     lambda url, _json, _headers: _resp(url, 200, {"session_token": "token-new"})
                 ],
                 "/archive/get_archive_list": [
-                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []})
+                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []}),
+                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []}),
                 ],
             }
         )
 
-        with patch("src.core.services.game_api.httpx.AsyncClient", lambda *args, **kwargs: fake_client):
+        with patch(
+            "src.core.services.game_api.httpx.AsyncClient",
+            lambda *args, **kwargs: fake_client,
+        ):
             result = await service.refresh_with_live(command_args="with_live")
 
-        self.assertEqual(result["source"]["archive_get_home_count"], 0)
+        self.assertEqual(result["source"]["archive_get_home_total_count"], 0)
         self.assertEqual(result["latest_archive_detail_meta"]["source"], "none")
+        self.assertEqual(result["latest_archive_any_meta"]["source"], "none")
         saved = json.loads(config_path.read_text(encoding="utf-8"))
         self.assertEqual(saved["credential"]["session_token"], "token-new")
 
@@ -319,78 +364,16 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(home_calls), 2)
         self.assertEqual(home_calls[-1]["headers"].get("authorization"), "Bearer token-new")
 
-    async def test_detail_fail_ignore_old_cache_and_fallback_to_home(self):
+    async def test_enter_detail_failed_not_block_overall_refresh(self):
         config_path = self.root / "cache" / "game_api" / "config.json"
         self._write_config(config_path, token="token-ok")
-        self._write_old_snapshot(
-            {
-                "updated_at": "2026-03-20T10:00:00+08:00",
-                "with_live_archive_home": [
-                    {
-                        "archives_id": "A1",
-                        "live_id": "L1",
-                        "live_type": 2,
-                        "name": "old-live",
-                    }
-                ],
-                "latest_archive": {
-                    "archives_id": "A1",
-                    "live_id": "L1",
-                    "live_type": 2,
-                    "name": "old-live",
-                },
-                "latest_archive_detail": {"archives_id": "A1", "from": "old-cache"},
-            }
-        )
-        service = GameApiService(project_root=self.root)
-
-        fake_client = _RouteClient(
-            {
-                "/archive/get_home": [
-                    lambda url, _json, _headers: _resp(url, 200, {"ok": True}),
-                    lambda url, _json, _headers: _resp(url, 500, {"message": "server error"}),
-                ],
-                "/archive/get_with_archive_data": [
-                    lambda url, _json, _headers: _resp(url, 500, {"message": "error"})
-                ],
-                "/archive/get_archive_list": [
-                    lambda url, _json, _headers: _resp(
-                        url,
-                        200,
-                        {"archive_list": [{"archives_id": "A1", "live_id": "L1", "live_type": 2}]},
-                    )
-                ],
-            }
-        )
-
-        with patch("src.core.services.game_api.httpx.AsyncClient", lambda *args, **kwargs: fake_client):
-            result = await service.refresh_with_live(command_args="with_live")
-
-        self.assertEqual(result["source"]["archive_get_home_count"], 0)
-        self.assertEqual(result["latest_archive"]["archives_id"], "A1")
-        self.assertEqual(result["latest_archive_detail"]["archives_id"], "A1")
-        self.assertEqual(result["latest_archive_detail_meta"]["source"], "home")
-        self.assertNotIn("from", result["latest_archive_detail"])
-
-        backup_path = self.root / "cache" / "game_api" / "with_live.prev.json"
-        self.assertTrue(backup_path.exists())
-        backup = json.loads(backup_path.read_text(encoding="utf-8"))
-        self.assertEqual(backup["updated_at"], "2026-03-20T10:00:00+08:00")
-
-    async def test_detail_fail_fallback_to_home_when_latest_changed(self):
-        config_path = self.root / "cache" / "game_api" / "config.json"
-        self._write_config(config_path, token="token-ok")
-        self._write_old_snapshot(
-            {
-                "updated_at": "2026-03-22T10:00:00+08:00",
-                "latest_archive": {"archives_id": "A1", "live_id": "L1", "live_type": 2},
-                "latest_archive_detail": {"archives_id": "A1", "from": "old-cache"},
-            }
-        )
+        self._write_old_snapshot({"updated_at": "2026-03-20T10:00:00+08:00"})
         service = GameApiService(project_root=self.root)
 
         now = datetime.now(timezone.utc)
-        start_time = (now + timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+        open_past = (now - timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
+        start_soon = (now + timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
+
         fake_client = _RouteClient(
             {
                 "/archive/get_home": [
@@ -401,46 +384,79 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
                         {
                             "live_archive_list": [
                                 {
-                                    "archives_id": "A2",
-                                    "live_id": "L2",
+                                    "archives_id": "W1",
+                                    "live_id": "WLIVE1",
                                     "live_type": 2,
-                                    "name": "new-live",
-                                    "live_start_time": start_time,
-                                }
-                            ],
-                            "trailer_archive_list": [
+                                    "name": "with-enterable",
+                                    "open_time": open_past,
+                                    "live_start_time": start_soon,
+                                },
                                 {
-                                    "archives_id": "A9",
-                                    "live_id": "L9",
-                                    "live_type": 2,
-                                    "name": "new-trailer",
-                                    "live_start_time": (now + timedelta(hours=3))
-                                    .isoformat()
-                                    .replace("+00:00", "Z"),
-                                }
+                                    "archives_id": "F1",
+                                    "live_id": "FLIVE1",
+                                    "live_type": 1,
+                                    "name": "fes-enterable",
+                                    "open_time": open_past,
+                                    "live_start_time": start_soon,
+                                },
                             ],
+                            "trailer_archive_list": [],
                         },
                     ),
                 ],
-                "/archive/get_with_archive_data": [
-                    lambda url, _json, _headers: _resp(url, 500, {"message": "error"})
+                "/withlive/enter": [
+                    lambda url, _json, _headers: _resp(url, 500, {"message": "boom"})
+                ],
+                "/feslive/lobby": [
+                    lambda url, _json, _headers: _resp(url, 500, {"message": "lobby-boom"})
+                ],
+                "/feslive/enter": [
+                    lambda url, request_json, _headers: _resp(
+                        url,
+                        200,
+                        {"live_id": request_json["live_id"], "fes_info": "ok"},
+                    )
                 ],
                 "/archive/get_archive_list": [
-                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []})
+                    lambda url, _json, _headers: _resp(
+                        url,
+                        200,
+                        {"archive_list": [{"archives_id": "W1", "live_type": 2}]},
+                    ),
+                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []}),
+                ],
+                "/archive/get_with_archive_data": [
+                    lambda url, _json, _headers: _resp(url, 500, {"message": "detail-boom"})
                 ],
             }
         )
 
-        with patch("src.core.services.game_api.httpx.AsyncClient", lambda *args, **kwargs: fake_client):
+        with patch(
+            "src.core.services.game_api.httpx.AsyncClient",
+            lambda *args, **kwargs: fake_client,
+        ):
             result = await service.refresh_with_live(command_args="with_live")
 
-        self.assertEqual(result["latest_archive_detail_meta"]["source"], "home")
-        self.assertEqual(result["latest_archive"]["archives_id"], "A2")
-        self.assertEqual(result["latest_archive_detail"]["archives_id"], "A2")
-        self.assertIn(
-            "archive_get_with_archive_data",
-            " ".join(result["latest_archive_detail_meta"]["errors"]),
+        source = result["source"]
+        self.assertEqual(source["enterable_total_count"], 2)
+        self.assertEqual(source["enter_detail_success_count"], 1)
+        self.assertEqual(source["enter_detail_failed_count"], 1)
+        self.assertEqual(
+            result["latest_archive_detail_meta"]["source"],
+            "home",
         )
+        self.assertEqual(
+            result["latest_archive_any_meta"]["source"],
+            "latest_archive",
+        )
+        self.assertTrue(
+            any("enter_detail:" in str(error) for error in source.get("fetch_errors", []))
+        )
+        statuses = {item["status"] for item in result["home_trailer_enter_details"]}
+        self.assertEqual(statuses, {"ok", "error"})
+
+        backup_path = self.root / "cache" / "game_api" / "with_live.prev.json"
+        self.assertTrue(backup_path.exists())
 
 
 class UpdateCommandTest(unittest.IsolatedAsyncioTestCase):
@@ -480,16 +496,22 @@ class UpdateCommandTest(unittest.IsolatedAsyncioTestCase):
                 "updated_at": "2026-03-23T10:00:00+08:00",
                 "cache_path": "/redacted/cache/game_api/with_live.json",
                 "source": {
-                    "archive_get_home_count": 3,
-                    "archive_get_home_live_count": 1,
-                    "archive_get_home_trailer_count": 2,
+                    "archive_get_home_total_count": 3,
+                    "archive_get_home_with_count": 2,
+                    "archive_get_home_fes_count": 1,
+                    "enterable_total_count": 2,
+                    "enterable_with_count": 1,
+                    "enterable_fes_count": 1,
+                    "enter_detail_success_count": 2,
+                    "enter_detail_failed_count": 0,
+                    "fetch_errors": ["x"],
                 },
-                "latest_archive": {
+                "latest_archive_any": {
                     "archives_id": "A100",
                     "name": "最新场次",
                 },
-                "latest_archive_detail_meta": {
-                    "source": "archive_get_with_archive_data",
+                "latest_archive_any_meta": {
+                    "source": "archive_get_archive_list",
                 },
             }
         )
@@ -502,11 +524,13 @@ class UpdateCommandTest(unittest.IsolatedAsyncioTestCase):
         payload = ctx.exception.payload
         self.assertIn("with_live 数据刷新完成", payload)
         self.assertIn("home 总场次: 3", payload)
-        self.assertIn("home live_archive: 1", payload)
-        self.assertIn("home trailer_archive: 2", payload)
+        self.assertIn("home With×MEETS: 2", payload)
+        self.assertIn("home Fes×LIVE: 1", payload)
+        self.assertIn("可进场总数: 2", payload)
+        self.assertIn("详情成功: 2", payload)
         self.assertIn("最新 Archive ID: A100", payload)
-        self.assertIn("详情来源: archive_get_with_archive_data", payload)
-        self.assertNotIn("保留历史详情", payload)
+        self.assertIn("最新 Archive 来源: archive_get_archive_list", payload)
+        self.assertIn("抓取告警: 1", payload)
         fake_refresh.assert_awaited_once_with(command_args="with_live")
 
 
