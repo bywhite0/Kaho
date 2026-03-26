@@ -80,6 +80,10 @@ Key fields in the snapshot:
 - `latest_archive_detail`: detail payload from `archive/get_with_archive_data` (falls back to `latest_archive` on failure)
 - `latest_archive_detail_meta`: detail source, stale flag, and fetch errors
 
+## Special Thanks
+
+- [linkura-cli](https://github.com/ChocoLZS/linkura-cli)
+
 ## License
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
