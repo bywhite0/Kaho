@@ -6,9 +6,9 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
-from src.core.services.with_live_image import WithLiveImageService
+from src.core.services.with_live_image import WithLiveImageService, _WithLiveImageRenderer
 
 
 class _FakeResponse:
@@ -162,6 +162,118 @@ class WithLiveImageCacheTest(unittest.IsolatedAsyncioTestCase):
                 }
             )
             self.assertTrue(re.match(r"^\d{2}:\d{2} 起直播中$", text))
+
+    async def test_build_live_detail_image_success(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            snapshot_path = root / "cache" / "game_api" / "with_live.json"
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot = {
+                "home_trailer_list": [
+                    {
+                        "name": "详情场次",
+                        "live_type": 2,
+                        "live_id": "L1",
+                        "thumbnail_image_url": "https://example.com/covers/detail.jpg",
+                        "live_start_time": "2026-03-25T13:00:00+09:00",
+                        "description": "第一行\n第二行",
+                    }
+                ]
+            }
+            snapshot_path.write_text(
+                json.dumps(snapshot, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            image_bytes = self._build_png_bytes("#d896ff")
+
+            class _FakeAsyncClient:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    return False
+
+                async def get(self, url, timeout=None):
+                    return _FakeResponse(image_bytes)
+
+            service = WithLiveImageService(project_root=root)
+            with patch("src.core.services.with_live_image.httpx.AsyncClient", _FakeAsyncClient):
+                rendered = await service.build_live_detail_image(
+                    index=1,
+                    auto_refresh_on_miss=False,
+                )
+
+            self.assertTrue(rendered.startswith(b"\x89PNG\r\n\x1a\n"))
+
+    def test_build_detail_item_fallbacks_to_enter_detail_description(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            service = WithLiveImageService(project_root=Path(tmp_dir))
+            snapshot = {
+                "home_trailer_enter_details": [
+                    {
+                        "live_id": "L1",
+                        "status": "ok",
+                        "detail": {"description": "主描述\n第二行"},
+                    }
+                ]
+            }
+            archive = {
+                "name": "详情场次",
+                "live_id": "L1",
+                "live_start_time": "2026-03-25T13:00:00+09:00",
+                "thumbnail_image_url": "https://example.com/covers/detail.jpg",
+            }
+
+            detail_item = service._build_detail_item(snapshot, archive)
+
+            self.assertEqual(detail_item["description"], "主描述\n第二行")
+
+    def test_renderer_wrap_lines_preserves_manual_newline(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            renderer = _WithLiveImageRenderer(icon_path=Path(tmp_dir) / "missing.png")
+            draw = ImageDraw.Draw(Image.new("RGB", (1080, 500), "#ffffff"))
+            lines = renderer._split_wrapped_lines(
+                draw=draw,
+                text="第一行\n第二行",
+                font=renderer.font_desc,
+                max_width=1000,
+            )
+
+            self.assertGreaterEqual(len(lines), 2)
+            self.assertEqual(lines[0], "第一行")
+            self.assertEqual(lines[1], "第二行")
+
+    async def test_build_live_detail_image_index_out_of_range(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            snapshot_path = root / "cache" / "game_api" / "with_live.json"
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot = {
+                "home_trailer_list": [
+                    {
+                        "name": "A",
+                        "live_start_time": "2026-03-25T13:00:00+09:00",
+                    },
+                    {
+                        "name": "B",
+                        "live_start_time": "2026-03-25T14:00:00+09:00",
+                    },
+                ]
+            }
+            snapshot_path.write_text(
+                json.dumps(snapshot, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            service = WithLiveImageService(project_root=root)
+            with self.assertRaises(ValueError) as ctx:
+                await service.build_live_detail_image(index=3, auto_refresh_on_miss=False)
+
+            self.assertIn("1-2", str(ctx.exception))
 
 
 if __name__ == "__main__":

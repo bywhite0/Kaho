@@ -22,6 +22,14 @@ class _DummyMatcher:
         raise _FinishCalled(payload)
 
 
+class _DummyMessage:
+    def __init__(self, text):
+        self._text = text
+
+    def extract_plain_text(self):
+        return self._text
+
+
 class _FailImageClient:
     async def __aenter__(self):
         return self
@@ -71,6 +79,68 @@ class LiveCommandTest(unittest.IsolatedAsyncioTestCase):
         payload = str(ctx.exception.payload)
         self.assertIn("生成直播信息图片失败", payload)
         self.assertIn("cache empty", payload)
+
+    async def test_live_detail_success(self):
+        import src.plugins.llll.live_detail as live_detail_module
+
+        matcher = _DummyMatcher()
+        fake_generate = AsyncMock(return_value=b"fake-png")
+        with patch.object(live_detail_module, "live_detail_cmd", matcher), patch.object(
+            live_detail_module, "generate_with_live_detail_image", fake_generate
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await live_detail_module._(_DummyMessage("1"))
+
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+        fake_generate.assert_awaited_once_with(index=1, auto_refresh_on_miss=True)
+
+    async def test_live_detail_missing_arg(self):
+        import src.plugins.llll.live_detail as live_detail_module
+
+        matcher = _DummyMatcher()
+        with patch.object(live_detail_module, "live_detail_cmd", matcher):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await live_detail_module._(_DummyMessage("   "))
+
+        payload = str(ctx.exception.payload)
+        self.assertIn("用法", payload)
+        self.assertIn("/live_detail", payload)
+
+    async def test_live_detail_non_int_arg(self):
+        import src.plugins.llll.live_detail as live_detail_module
+
+        matcher = _DummyMatcher()
+        with patch.object(live_detail_module, "live_detail_cmd", matcher):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await live_detail_module._(_DummyMessage("abc"))
+
+        self.assertIn("请输入正整数序号", str(ctx.exception.payload))
+
+    async def test_live_detail_non_positive_arg(self):
+        import src.plugins.llll.live_detail as live_detail_module
+
+        matcher = _DummyMatcher()
+        with patch.object(live_detail_module, "live_detail_cmd", matcher):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await live_detail_module._(_DummyMessage("0"))
+
+        self.assertIn("请输入正整数序号", str(ctx.exception.payload))
+
+    async def test_live_detail_out_of_range(self):
+        import src.plugins.llll.live_detail as live_detail_module
+
+        matcher = _DummyMatcher()
+        fake_generate = AsyncMock(side_effect=ValueError("序号超出范围，可选范围: 1-2"))
+        with patch.object(live_detail_module, "live_detail_cmd", matcher), patch.object(
+            live_detail_module, "generate_with_live_detail_image", fake_generate
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await live_detail_module._(_DummyMessage("3"))
+
+        payload = str(ctx.exception.payload)
+        self.assertIn("生成直播详情图失败", payload)
+        self.assertIn("序号超出范围", payload)
 
 
 class WithLiveImageServiceTest(unittest.IsolatedAsyncioTestCase):

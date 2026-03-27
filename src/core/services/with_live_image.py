@@ -6,7 +6,7 @@ import tempfile
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import httpx
@@ -36,13 +36,9 @@ class WithLiveImageService:
         self.icon_path = self.project_root / "assets" / "icons" / "icon_livenow.png"
 
     async def build_current_live_image(self, auto_refresh_on_miss: bool = True) -> bytes:
-        snapshot = self._read_snapshot()
-        archives = self._extract_archives(snapshot)
-
-        if not archives and auto_refresh_on_miss:
-            await refresh_with_live_data(command_args="with_live")
-            snapshot = self._read_snapshot()
-            archives = self._extract_archives(snapshot)
+        _, archives = await self._load_snapshot_and_archives(
+            auto_refresh_on_miss=auto_refresh_on_miss
+        )
 
         if not archives:
             raise RuntimeError("未找到 with_live 数据，请先执行 /update with_live")
@@ -70,6 +66,89 @@ class WithLiveImageService:
 
         renderer = _WithLiveImageRenderer(icon_path=self.icon_path)
         return renderer.render(items, thumbnails)
+
+    async def build_live_detail_image(
+        self, index: int, auto_refresh_on_miss: bool = True
+    ) -> bytes:
+        if index <= 0:
+            raise ValueError("序号必须为正整数")
+
+        snapshot, archives = await self._load_snapshot_and_archives(
+            auto_refresh_on_miss=auto_refresh_on_miss
+        )
+        if not archives:
+            raise RuntimeError("未找到 with_live 数据，请先执行 /update with_live")
+
+        total = len(archives)
+        if index > total:
+            raise ValueError(f"序号超出范围，可选范围: 1-{total}")
+
+        archive = archives[index - 1]
+        detail_item = self._build_detail_item(snapshot, archive)
+        if not detail_item.get("title"):
+            raise RuntimeError("直播数据缺少标题，无法生成详情图")
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            thumbnail = await self._fetch_image(client, detail_item["thumb_url"])
+
+        renderer = _WithLiveImageRenderer(icon_path=self.icon_path)
+        return renderer.render_detail(detail_item, thumbnail)
+
+    async def _load_snapshot_and_archives(
+        self, auto_refresh_on_miss: bool = True
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        snapshot = self._read_snapshot()
+        archives = self._extract_archives(snapshot)
+
+        if not archives and auto_refresh_on_miss:
+            await refresh_with_live_data(command_args="with_live")
+            snapshot = self._read_snapshot()
+            archives = self._extract_archives(snapshot)
+
+        return snapshot, archives
+
+    def _build_detail_item(
+        self,
+        snapshot: Dict[str, Any],
+        archive: Dict[str, Any],
+    ) -> Dict[str, str]:
+        return {
+            "title": str(archive.get("name") or "").strip(),
+            "time": self._format_time(archive),
+            "thumb_url": str(archive.get("thumbnail_image_url") or "").strip(),
+            "description": self._extract_detail_description(snapshot, archive),
+        }
+
+    def _extract_detail_description(
+        self,
+        snapshot: Dict[str, Any],
+        archive: Dict[str, Any],
+    ) -> str:
+        archive_desc = str(archive.get("description") or "").strip()
+        if archive_desc:
+            return archive_desc
+
+        target_live_id = str(archive.get("live_id") or "").strip()
+        enter_details = self._to_dict_list(snapshot.get("home_trailer_enter_details"))
+        for enter_item in enter_details:
+            if target_live_id and str(enter_item.get("live_id") or "").strip() != target_live_id:
+                continue
+            detail = enter_item.get("detail")
+            if not isinstance(detail, dict):
+                continue
+            detail_desc = str(detail.get("description") or "").strip()
+            if detail_desc:
+                return detail_desc
+
+        for enter_item in enter_details:
+            detail = enter_item.get("detail")
+            if not isinstance(detail, dict):
+                continue
+            detail_desc = str(detail.get("description") or "").strip()
+            if detail_desc:
+                return detail_desc
+
+        return "暂无直播描述"
 
     def _read_snapshot(self) -> Dict[str, Any]:
         if not self.cache_path.exists() or not self.cache_path.is_file():
@@ -266,6 +345,7 @@ class _WithLiveImageRenderer:
         self.font_status = self._load_font_safe(44, weight="Bold")
         self.font_header = self._load_cn_font_safe(44, weight="Bold")
         self.font_meta = self._load_cn_font_safe(30, weight="Bold")
+        self.font_desc = self._load_font_safe(32)
         self.icon_status_img = self._load_icon(icon_path)
 
     def render(self, items: List[Dict[str, str]], thumbnails: List[Image.Image]) -> bytes:
@@ -278,6 +358,52 @@ class _WithLiveImageRenderer:
             current_y = self._render_item(canvas, current_y, item, thumb)
 
         final_image = canvas.crop((0, 0, self.WIDTH, current_y))
+        buf = BytesIO()
+        final_image.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def render_detail(self, item: Dict[str, str], thumbnail: Image.Image) -> bytes:
+        max_height = 2600
+        canvas = Image.new("RGB", (self.WIDTH, max_height), "#FFFFFF")
+        self._render_header(canvas)
+        draw = ImageDraw.Draw(canvas)
+
+        current_y = self.HEADER_H + 24
+        thumb_resized = self._resize_thumbnail(thumbnail)
+        canvas.paste(thumb_resized, (0, current_y), thumb_resized)
+
+        current_y += thumb_resized.height + 36
+        draw.text(
+            (40, current_y),
+            item["title"],
+            fill=self.C_TEXT_MAIN,
+            font=self.font_title,
+        )
+
+        title_height = self._measure_text_height(draw, item["title"], self.font_title)
+        current_y += title_height + 20
+        draw.text(
+            (40, current_y),
+            item["time"],
+            fill=self.C_TEXT_META,
+            font=self.font_meta,
+        )
+
+        time_height = self._measure_text_height(draw, item["time"], self.font_meta)
+        current_y += time_height + 24
+        current_y = self._draw_wrapped_text(
+            draw=draw,
+            x=40,
+            y=current_y,
+            text=item["description"],
+            font=self.font_desc,
+            color=self.C_TEXT_MAIN,
+            max_width=self.WIDTH - 80,
+            line_spacing=12,
+        )
+
+        final_height = min(max_height, max(current_y + 40, self.HEADER_H + 300))
+        final_image = canvas.crop((0, 0, self.WIDTH, final_height))
         buf = BytesIO()
         final_image.save(buf, format="PNG")
         return buf.getvalue()
@@ -375,6 +501,64 @@ class _WithLiveImageRenderer:
             return int(box[2] - box[0])
         except AttributeError:
             return int(draw.textlength(text, font=font))
+
+    def _measure_text_height(
+        self, draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont
+    ) -> int:
+        sample = text if text else "A"
+        try:
+            box = draw.textbbox((0, 0), sample, font=font)
+            return max(1, int(box[3] - box[1]))
+        except AttributeError:
+            return int(getattr(font, "size", 16))
+
+    def _split_wrapped_lines(
+        self,
+        draw: ImageDraw.ImageDraw,
+        text: str,
+        font: ImageFont.ImageFont,
+        max_width: int,
+    ) -> List[str]:
+        normalized_text = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+        if not normalized_text:
+            return ["暂无直播描述"]
+
+        lines: List[str] = []
+        for raw_line in normalized_text.split("\n"):
+            if raw_line == "":
+                lines.append("")
+                continue
+
+            current = ""
+            for char in raw_line:
+                candidate = current + char
+                if current and self._measure_text_width(draw, candidate, font) > max_width:
+                    lines.append(current)
+                    current = char
+                else:
+                    current = candidate
+            lines.append(current)
+        return lines or ["暂无直播描述"]
+
+    def _draw_wrapped_text(
+        self,
+        draw: ImageDraw.ImageDraw,
+        x: int,
+        y: int,
+        text: str,
+        font: ImageFont.ImageFont,
+        color: str,
+        max_width: int,
+        line_spacing: int,
+    ) -> int:
+        lines = self._split_wrapped_lines(draw, text, font, max_width)
+        line_height = self._measure_text_height(draw, "示", font)
+        current_y = y
+        for line in lines:
+            if line:
+                draw.text((x, current_y), line, fill=color, font=font)
+            current_y += line_height + line_spacing
+        return current_y
 
     @staticmethod
     def _load_cn_font_safe(size: int, weight: str = "Regular") -> ImageFont.ImageFont:
@@ -509,4 +693,14 @@ def get_with_live_image_service() -> WithLiveImageService:
 async def generate_with_live_image(auto_refresh_on_miss: bool = True) -> bytes:
     return await get_with_live_image_service().build_current_live_image(
         auto_refresh_on_miss=auto_refresh_on_miss
+    )
+
+
+async def generate_with_live_detail_image(
+    index: int,
+    auto_refresh_on_miss: bool = True,
+) -> bytes:
+    return await get_with_live_image_service().build_live_detail_image(
+        index=index,
+        auto_refresh_on_miss=auto_refresh_on_miss,
     )

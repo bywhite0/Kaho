@@ -41,6 +41,7 @@ A NoneBot2-based bot for Link! Like! LoveLive! (Hasu no sora Jogakuin School Ido
 - `/music [Title/ID]`: Search for song and stage details.
 - `/comic [Query]`: Browse and search for in-game comics.
 - `/live`: Generate the current With×MEETS/Fes×LIVE info image.
+- `/live_detail [Index]`: Generate a detail image for the indexed live entry.
 - `/dbrebuild`: Rebuild the local game database (Superuser only).
 - `/update with_live`: Refresh archive home snapshot and cache the latest archive detail (Superuser only).
 
