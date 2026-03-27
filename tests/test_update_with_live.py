@@ -60,9 +60,15 @@ class _RouteClient:
         return item
 
 
-def _resp(url, status_code, payload):
+def _resp(url, status_code, payload, headers=None):
     request = httpx.Request("POST", url)
-    return httpx.Response(status_code, request=request, json=payload)
+    response_headers = headers or {}
+    return httpx.Response(
+        status_code,
+        request=request,
+        json=payload,
+        headers=response_headers,
+    )
 
 
 def _build_config(token="token-old"):
@@ -339,7 +345,17 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
                     ),
                 ],
                 "/user/login": [
-                    lambda url, _json, _headers: _resp(url, 200, {"session_token": "token-new"})
+                    lambda url, request_json, _headers: _resp(
+                        url,
+                        400,
+                        {"message": "version probe"},
+                        headers={
+                            "x-res-version": "R2603260@probe",
+                        },
+                    )
+                    if request_json.get("player_id") == ""
+                    else _resp(url, 500, {"message": "unexpected probe payload"}),
+                    lambda url, _json, _headers: _resp(url, 200, {"session_token": "token-new"}),
                 ],
                 "/archive/get_archive_list": [
                     lambda url, _json, _headers: _resp(url, 200, {"archive_list": []}),
@@ -351,6 +367,10 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
         with patch(
             "src.core.services.game_api.httpx.AsyncClient",
             lambda *args, **kwargs: fake_client,
+        ), patch.object(
+            service,
+            "_detect_latest_client_version",
+            AsyncMock(return_value="4.11.5"),
         ):
             result = await service.refresh_with_live(command_args="with_live")
 
@@ -359,6 +379,70 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["latest_archive_any_meta"]["source"], "none")
         saved = json.loads(config_path.read_text(encoding="utf-8"))
         self.assertEqual(saved["credential"]["session_token"], "token-new")
+        self.assertEqual(saved["credential"]["client_version"], "4.11.5")
+        self.assertEqual(saved["credential"]["res_version"], "R2603260")
+
+        home_calls = [call for call in fake_client.calls if call["path"] == "/archive/get_home"]
+        self.assertGreaterEqual(len(home_calls), 2)
+        self.assertEqual(home_calls[-1]["headers"].get("authorization"), "Bearer token-new")
+        self.assertEqual(home_calls[-1]["headers"].get("x-client-version"), "4.11.5")
+        self.assertEqual(home_calls[-1]["headers"].get("x-res-version"), "R2603260")
+
+        login_calls = [call for call in fake_client.calls if call["path"] == "/user/login"]
+        self.assertEqual(len(login_calls), 2)
+        self.assertEqual(login_calls[0]["json"].get("player_id"), "")
+        self.assertEqual(login_calls[0]["headers"].get("x-client-version"), "4.11.5")
+
+    async def test_refresh_token_when_session_check_returns_400(self):
+        config_path = self.root / "cache" / "game_api" / "config.json"
+        self._write_config(config_path, token="token-old")
+        service = GameApiService(project_root=self.root)
+
+        fake_client = _RouteClient(
+            {
+                "/archive/get_home": [
+                    lambda url, _json, _headers: _resp(url, 400, {"message": "bad version"}),
+                    lambda url, _json, _headers: _resp(
+                        url,
+                        200,
+                        {"live_archive_list": [], "trailer_archive_list": []},
+                    ),
+                ],
+                "/user/login": [
+                    lambda url, request_json, _headers: _resp(
+                        url,
+                        400,
+                        {"message": "version probe"},
+                        headers={
+                            "x-res-version": "R2603260@probe",
+                        },
+                    )
+                    if request_json.get("player_id") == ""
+                    else _resp(url, 500, {"message": "unexpected probe payload"}),
+                    lambda url, _json, _headers: _resp(url, 200, {"session_token": "token-new"}),
+                ],
+                "/archive/get_archive_list": [
+                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []}),
+                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []}),
+                ],
+            }
+        )
+
+        with patch(
+            "src.core.services.game_api.httpx.AsyncClient",
+            lambda *args, **kwargs: fake_client,
+        ), patch.object(
+            service,
+            "_detect_latest_client_version",
+            AsyncMock(return_value="4.11.5"),
+        ):
+            result = await service.refresh_with_live(command_args="with_live")
+
+        self.assertEqual(result["source"]["archive_get_home_total_count"], 0)
+        saved = json.loads(config_path.read_text(encoding="utf-8"))
+        self.assertEqual(saved["credential"]["session_token"], "token-new")
+        self.assertEqual(saved["credential"]["client_version"], "4.11.5")
+        self.assertEqual(saved["credential"]["res_version"], "R2603260")
 
         home_calls = [call for call in fake_client.calls if call["path"] == "/archive/get_home"]
         self.assertGreaterEqual(len(home_calls), 2)

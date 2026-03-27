@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import secrets
 import string
 import tempfile
@@ -27,6 +28,23 @@ ENV_GAME_API_USER_API_VERSION = "GAME_API_USER_API_VERSION"
 DEFAULT_UA_PREFIX = "inspix-android"
 DEFAULT_DEVICE_TYPE = "android"
 DEFAULT_USER_API_VERSION = "1.0.0"
+DEFAULT_BASE_RES_VERSION = "R2504300"
+DEFAULT_BASE_CLIENT_VERSION = "3.1.0"
+LINKURA_APP_STORE_URL = (
+    "https://apps.apple.com/jp/app/"
+    "link-like-%E3%83%A9%E3%83%96%E3%83%A9%E3%82%A4%E3%83%96-"
+    "%E8%93%AE%E3%83%8E%E7%A9%BA%E3%82%B9%E3%82%AF%E3%83%BC%E3%83%AB"
+    "%E3%82%A2%E3%82%A4%E3%83%89%E3%83%AB%E3%82%AF%E3%83%A9%E3%83%96/"
+    "id1665027261"
+)
+LINKURA_GOOGLE_PLAY_URL = (
+    "https://play.google.com/store/apps/details?"
+    "id=com.oddno.lovelive&hl=en"
+)
+WEB_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+)
 REQUIRED_CREDENTIAL_KEYS = (
     "res_version",
     "client_version",
@@ -223,7 +241,7 @@ class GameApiService:
             )
             return True
         except GameApiRequestError as exc:
-            if exc.status_code in (401, 403):
+            if exc.status_code in (400, 401, 403):
                 return False
             raise
 
@@ -242,6 +260,126 @@ class GameApiService:
         if not session_token:
             raise GameApiServiceError("刷新会话失败: 响应缺少 session_token")
         return session_token
+
+    def _normalize_res_version(self, raw_value: Any) -> str:
+        text = str(raw_value or "").strip()
+        if not text:
+            return ""
+        return text.split("@", 1)[0].strip()
+
+    async def _fetch_appstore_version(
+        self,
+        client: httpx.AsyncClient,
+    ) -> Optional[str]:
+        response = await client.get(
+            LINKURA_APP_STORE_URL,
+            headers={"user-agent": WEB_UA},
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+        match = re.search(
+            r'"primarySubtitle":\s*"(\d+\.\d+\.\d+)"',
+            response.text,
+        )
+        if not match:
+            return None
+        return str(match.group(1)).strip()
+
+    async def _fetch_google_play_version(
+        self,
+        client: httpx.AsyncClient,
+    ) -> Optional[str]:
+        response = await client.get(
+            LINKURA_GOOGLE_PLAY_URL,
+            headers={"user-agent": WEB_UA},
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+        match = re.search(
+            r'Link！Like！ラブライブ！蓮ノ空スクールアイドルクラブ"[^\n]*\["(\d+\.\d+\.\d+)"\]',
+            response.text,
+        )
+        if not match:
+            return None
+        return str(match.group(1)).strip()
+
+    async def _detect_latest_client_version(
+        self,
+        client: httpx.AsyncClient,
+    ) -> Optional[str]:
+        try:
+            appstore_version = await self._fetch_appstore_version(client)
+            if appstore_version:
+                return appstore_version
+        except Exception as exc:
+            logger.warning(f"获取 App Store 版本失败: {exc}")
+
+        try:
+            play_version = await self._fetch_google_play_version(client)
+            if play_version:
+                return play_version
+        except Exception as exc:
+            logger.warning(f"获取 Google Play 版本失败: {exc}")
+        return None
+
+    async def _probe_latest_res_version(
+        self,
+        client: httpx.AsyncClient,
+        credential: Dict[str, Any],
+        client_version: str,
+    ) -> Optional[str]:
+        probe_credential = dict(credential)
+        probe_credential["client_version"] = client_version
+        response = await client.post(
+            f"{self.api_base}/user/login",
+            json={
+                "player_id": "",
+                "device_specific_id": "",
+                "version": 1,
+            },
+            headers=self._build_headers(probe_credential, session_token=None),
+        )
+        return self._normalize_res_version(response.headers.get("x-res-version"))
+
+    async def _ensure_latest_versions_before_login(
+        self,
+        client: httpx.AsyncClient,
+        credential: Dict[str, Any],
+        config_path: Path,
+    ) -> None:
+        current_client = str(credential.get("client_version") or "").strip()
+        current_res = self._normalize_res_version(credential.get("res_version"))
+        latest_client = await self._detect_latest_client_version(client)
+        if not latest_client:
+            latest_client = current_client or DEFAULT_BASE_CLIENT_VERSION
+        latest_client = str(latest_client).strip() or DEFAULT_BASE_CLIENT_VERSION
+
+        try:
+            latest_res = await self._probe_latest_res_version(
+                client=client,
+                credential=credential,
+                client_version=latest_client,
+            )
+        except Exception as exc:
+            logger.warning(f"探测资源版本失败: {exc}")
+            latest_res = None
+
+        if not latest_res:
+            latest_res = current_res or DEFAULT_BASE_RES_VERSION
+
+        changed = False
+        if latest_client != current_client:
+            credential["client_version"] = latest_client
+            changed = True
+        if latest_res != current_res:
+            credential["res_version"] = latest_res
+            changed = True
+        if changed:
+            self.save_credential(config_path, credential)
+            logger.info(
+                f"登录前版本已更新: client_version={credential.get('client_version')} "
+                f"res_version={credential.get('res_version')}"
+            )
 
     def _parse_time(self, value: Any) -> Optional[datetime]:
         if value is None:
@@ -578,6 +716,11 @@ class GameApiService:
                 is_valid = False
 
             if not is_valid:
+                await self._ensure_latest_versions_before_login(
+                    client=client,
+                    credential=credential,
+                    config_path=config_path,
+                )
                 session_token = await self._login_refresh_token(client, credential)
                 credential["session_token"] = session_token
                 self.save_credential(config_path, credential)
