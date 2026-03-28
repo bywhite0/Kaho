@@ -39,6 +39,24 @@ class DataStore:
         self._init_db()
         logger.info(f"数据库已初始化: {self.db_path}")
 
+    def close(self):
+        engine = getattr(self, "_engine", None)
+        if engine is None:
+            return
+        try:
+            engine.dispose()
+        except Exception as exc:
+            logger.warning(f"关闭数据库引擎失败: {self.db_path} error={exc}")
+        finally:
+            self._engine = None
+            self._session_factory = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def _project_root(self):
         return os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..")

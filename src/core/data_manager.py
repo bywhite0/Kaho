@@ -57,6 +57,21 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             204: "混组限定",
         }
 
+    def close(self):
+        store = getattr(self, "store", None)
+        if store is None:
+            return
+        try:
+            store.close()
+        except Exception as exc:
+            logger.warning(f"关闭 DataManager 存储失败: {exc}")
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def reset_runtime_cache(self):
         self.data = {}
         self.card_datas = []
@@ -75,6 +90,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         self.card_series_meta = {}
         self.costumes = {}
         self.costume_models = []
+        self.live_locations = {}
         self.card_duet_voices = {}
         self.style_voice_entries = {}
         self.style_movie_series = set()
@@ -149,6 +165,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             "gachas",
             "costumes",
             "costume_models",
+            "live_locations",
             "card_duet_voices",
             "style_voices",
             "style_movies",
@@ -207,6 +224,8 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
                 self._load_costumes()
             elif group == "costume_models":
                 self._load_costume_models()
+            elif group == "live_locations":
+                self._load_live_locations()
             elif group == "card_duet_voices":
                 self._load_card_duet_voices()
             elif group == "style_voices":
@@ -371,6 +390,17 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
 
     def _load_costume_models(self):
         self.costume_models = self.load_yaml_file("CostumeModels.yaml") or []
+
+    def _load_live_locations(self):
+        self.live_locations = {}
+        entries = self.load_yaml_file("LiveLocations.yaml") or []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            location_id = entry.get("Id")
+            if location_id is None:
+                continue
+            self.live_locations[location_id] = entry
 
     def _load_center_skills(self):
         self.center_skills = {}
@@ -776,6 +806,26 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         for label in grouped:
             grouped[label].sort()
         return dict(sorted(grouped.items(), key=lambda x: x[0]))
+
+    def get_costume_label(self, costume_id):
+        self._ensure("costumes")
+        try:
+            cid = int(costume_id)
+        except (TypeError, ValueError):
+            return None
+        costume = self.costumes.get(cid) or {}
+        label = str(costume.get("Label") or "").strip()
+        return label or None
+
+    def get_live_location_label(self, location_id):
+        self._ensure("live_locations")
+        try:
+            lid = int(location_id)
+        except (TypeError, ValueError):
+            return None
+        location = self.live_locations.get(lid) or {}
+        label = str(location.get("Label") or "").strip()
+        return label or None
 
     def get_duet_voice_character_ids(self, series_id):
         self._ensure("card_duet_voices")
