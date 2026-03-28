@@ -93,7 +93,30 @@ class LiveCommandTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsInstance(ctx.exception.payload, MessageSegment)
         self.assertEqual(ctx.exception.payload.type, "image")
-        fake_generate.assert_awaited_once_with(index=1, auto_refresh_on_miss=True)
+        fake_generate.assert_awaited_once_with(
+            index=1,
+            auto_refresh_on_miss=True,
+            show_spoiler=False,
+        )
+
+    async def test_live_detail_success_with_spoiler(self):
+        import src.plugins.llll.live_detail as live_detail_module
+
+        matcher = _DummyMatcher()
+        fake_generate = AsyncMock(return_value=b"fake-png")
+        with patch.object(live_detail_module, "live_detail_cmd", matcher), patch.object(
+            live_detail_module, "generate_with_live_detail_image", fake_generate
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await live_detail_module._(_DummyMessage("1 --spoiler"))
+
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+        fake_generate.assert_awaited_once_with(
+            index=1,
+            auto_refresh_on_miss=True,
+            show_spoiler=True,
+        )
 
     async def test_live_detail_missing_arg(self):
         import src.plugins.llll.live_detail as live_detail_module
@@ -126,6 +149,16 @@ class LiveCommandTest(unittest.IsolatedAsyncioTestCase):
                 await live_detail_module._(_DummyMessage("0"))
 
         self.assertIn("请输入正整数序号", str(ctx.exception.payload))
+
+    async def test_live_detail_invalid_optional_arg(self):
+        import src.plugins.llll.live_detail as live_detail_module
+
+        matcher = _DummyMatcher()
+        with patch.object(live_detail_module, "live_detail_cmd", matcher):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await live_detail_module._(_DummyMessage("1 --test"))
+
+        self.assertIn("不支持的参数", str(ctx.exception.payload))
 
     async def test_live_detail_out_of_range(self):
         import src.plugins.llll.live_detail as live_detail_module

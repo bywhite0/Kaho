@@ -10,8 +10,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import httpx
-from PIL import Image, ImageColor, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageColor, ImageDraw, ImageFont
 
+from src.core.data_manager import DataManager
+from src.core.services.dm_provider import get_dm, init_dm
 from src.core.services.game_api import refresh_with_live_data
 
 try:
@@ -23,17 +25,34 @@ except ImportError:
 
 
 class WithLiveImageService:
+    SPOILER_HIDDEN_TEXT = "ネタバレ注意（--spoiler で表示）"
+
     def __init__(self, project_root: Optional[Path] = None, timeout: float = 15.0):
+        default_root = Path(__file__).resolve().parents[3]
         if project_root is None:
-            self.project_root = Path(__file__).resolve().parents[3]
+            self.project_root = default_root
+            self._use_shared_dm = True
         else:
             self.project_root = Path(project_root)
+            self._use_shared_dm = self.project_root.resolve() == default_root.resolve()
         self.timeout = timeout
         self.cache_path = self.project_root / "cache" / "game_api" / "with_live.json"
+        self.masterdata_dir = self.project_root / "masterdata"
         self.cover_cache_dir = (
             self.project_root / "cache" / "game_api" / "with_live_cover"
         )
         self.icon_path = self.project_root / "assets" / "icons" / "icon_livenow.png"
+        self._dm: Optional[DataManager] = None
+
+    def close(self):
+        if not self._use_shared_dm:
+            self._release_local_dm()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
     async def build_current_live_image(self, auto_refresh_on_miss: bool = True) -> bytes:
         _, archives = await self._load_snapshot_and_archives(
@@ -64,11 +83,17 @@ class WithLiveImageService:
             for item in items
         ]
 
-        renderer = _WithLiveImageRenderer(icon_path=self.icon_path)
+        renderer = _WithLiveImageRenderer(
+            icon_path=self.icon_path,
+            project_root=self.project_root,
+        )
         return renderer.render(items, thumbnails)
 
     async def build_live_detail_image(
-        self, index: int, auto_refresh_on_miss: bool = True
+        self,
+        index: int,
+        auto_refresh_on_miss: bool = True,
+        show_spoiler: bool = False,
     ) -> bytes:
         if index <= 0:
             raise ValueError("序号必须为正整数")
@@ -88,10 +113,30 @@ class WithLiveImageService:
         if not detail_item.get("title"):
             raise RuntimeError("直播数据缺少标题，无法生成详情图")
 
+        can_use_enhanced, enter_detail = self._resolve_enter_detail(snapshot, archive)
+        if can_use_enhanced and isinstance(enter_detail, dict):
+            try:
+                dm = await self._get_data_manager()
+                detail_item = self._build_enhanced_detail_item(
+                    detail_item=detail_item,
+                    archive=archive,
+                    enter_detail=enter_detail,
+                    show_spoiler=show_spoiler,
+                    dm=dm,
+                )
+            finally:
+                if not self._use_shared_dm:
+                    self._release_local_dm()
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             thumbnail = await self._fetch_image(client, detail_item["thumb_url"])
 
-        renderer = _WithLiveImageRenderer(icon_path=self.icon_path)
+        renderer = _WithLiveImageRenderer(
+            icon_path=self.icon_path,
+            project_root=self.project_root,
+        )
+        if can_use_enhanced:
+            return renderer.render_detail_enhanced(detail_item, thumbnail)
         return renderer.render_detail(detail_item, thumbnail)
 
     async def _load_snapshot_and_archives(
@@ -111,13 +156,201 @@ class WithLiveImageService:
         self,
         snapshot: Dict[str, Any],
         archive: Dict[str, Any],
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         return {
             "title": str(archive.get("name") or "").strip(),
             "time": self._format_time(archive),
             "thumb_url": str(archive.get("thumbnail_image_url") or "").strip(),
             "description": self._extract_detail_description(snapshot, archive),
         }
+
+    def _resolve_enter_detail(
+        self,
+        snapshot: Dict[str, Any],
+        archive: Dict[str, Any],
+    ) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        if not self._is_archive_enterable(snapshot, archive):
+            return False, None
+
+        target_live_id = str(archive.get("live_id") or "").strip()
+        enter_details = self._to_dict_list(snapshot.get("home_trailer_enter_details"))
+        for enter_item in enter_details:
+            if str(enter_item.get("status") or "").strip() != "ok":
+                continue
+            if target_live_id and str(enter_item.get("live_id") or "").strip() != target_live_id:
+                continue
+            detail = enter_item.get("detail")
+            if isinstance(detail, dict):
+                return True, dict(detail)
+        return False, None
+
+    def _is_archive_enterable(
+        self,
+        snapshot: Dict[str, Any],
+        archive: Dict[str, Any],
+    ) -> bool:
+        enterable_items = self._to_dict_list(snapshot.get("home_trailer_enterable_list"))
+        for item in enterable_items:
+            if self._is_same_archive(archive, item):
+                return True
+        return False
+
+    def _is_same_archive(self, a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+        a_archives_id = str(a.get("archives_id") or "").strip()
+        b_archives_id = str(b.get("archives_id") or "").strip()
+        if a_archives_id and b_archives_id and a_archives_id == b_archives_id:
+            return True
+
+        a_live_id = str(a.get("live_id") or "").strip()
+        b_live_id = str(b.get("live_id") or "").strip()
+        if a_live_id and b_live_id and a_live_id == b_live_id:
+            return True
+        return False
+
+    def _build_enhanced_detail_item(
+        self,
+        detail_item: Dict[str, Any],
+        archive: Dict[str, Any],
+        enter_detail: Dict[str, Any],
+        show_spoiler: bool,
+        dm: Optional[DataManager],
+    ) -> Dict[str, Any]:
+        item = dict(detail_item)
+        item["orientation_text"] = self._build_orientation_text(enter_detail)
+        item["character_ids"] = self._extract_character_ids(enter_detail=enter_detail)
+        item["location_text"] = self._build_location_text(enter_detail, show_spoiler, dm)
+        item["costume_text"] = self._build_costume_text(enter_detail, show_spoiler, dm)
+        return item
+
+    def _build_orientation_text(self, enter_detail: Dict[str, Any]) -> str:
+        is_horizontal = enter_detail.get("is_horizontal")
+        if isinstance(is_horizontal, bool):
+            return "横画面" if is_horizontal else "縦画面"
+        return "不明"
+
+    def _extract_character_ids(
+        self,
+        enter_detail: Dict[str, Any],
+    ) -> List[int]:
+        result: List[int] = []
+        seen = set()
+
+        detail_characters = enter_detail.get("characters")
+        if isinstance(detail_characters, list):
+            for item in detail_characters:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    char_id = int(item.get("character_id"))
+                except (TypeError, ValueError):
+                    continue
+                if char_id <= 0 or char_id in seen:
+                    continue
+                seen.add(char_id)
+                result.append(char_id)
+
+        return result
+
+    def _build_location_text(
+        self,
+        enter_detail: Dict[str, Any],
+        show_spoiler: bool,
+        dm: Optional[DataManager],
+    ) -> str:
+        if not show_spoiler:
+            return self.SPOILER_HIDDEN_TEXT
+
+        try:
+            location_id = int(enter_detail.get("live_location_id"))
+        except (TypeError, ValueError):
+            return "不明"
+
+        if dm is not None:
+            try:
+                location_label = dm.get_live_location_label(location_id)
+            except Exception as exc:
+                logger.warning(f"读取直播地点失败: id={location_id} error={exc}")
+                location_label = None
+            if location_label:
+                return location_label
+        return f"地点ID: {location_id}"
+
+    def _build_costume_text(
+        self,
+        enter_detail: Dict[str, Any],
+        show_spoiler: bool,
+        dm: Optional[DataManager],
+    ) -> str:
+        if not show_spoiler:
+            return self.SPOILER_HIDDEN_TEXT
+
+        costume_ids = self._extract_int_list(enter_detail.get("costume_ids"))
+        if not costume_ids:
+            return "不明"
+
+        labels: List[str] = []
+        for costume_id in costume_ids:
+            label = None
+            if dm is not None:
+                try:
+                    label = dm.get_costume_label(costume_id)
+                except Exception as exc:
+                    logger.warning(f"读取服装信息失败: id={costume_id} error={exc}")
+            if label:
+                labels.append(label)
+            else:
+                labels.append(f"服装ID: {costume_id}")
+        return " / ".join(labels)
+
+    def _extract_int_list(self, raw: Any) -> List[int]:
+        if not isinstance(raw, list):
+            return []
+        result: List[int] = []
+        seen = set()
+        for item in raw:
+            try:
+                value = int(item)
+            except (TypeError, ValueError):
+                continue
+            if value <= 0 or value in seen:
+                continue
+            seen.add(value)
+            result.append(value)
+        return result
+
+    async def _get_data_manager(self) -> Optional[DataManager]:
+        if self._dm is not None:
+            return self._dm
+
+        if self._use_shared_dm:
+            shared_dm = get_dm()
+            if shared_dm is not None:
+                self._dm = shared_dm
+                return self._dm
+            try:
+                self._dm = await init_dm()
+            except Exception as exc:
+                logger.warning(f"复用全局 DataManager 失败: {exc}")
+                self._dm = None
+            return self._dm
+
+        try:
+            self._dm = DataManager(str(self.masterdata_dir))
+        except Exception as exc:
+            logger.warning(f"初始化 DataManager 失败: {exc}")
+            self._dm = None
+        return self._dm
+
+    def _release_local_dm(self):
+        dm = self._dm
+        if dm is None:
+            return
+        try:
+            dm.close()
+        except Exception as exc:
+            logger.warning(f"释放本地 DataManager 失败: {exc}")
+        finally:
+            self._dm = None
 
     def _extract_detail_description(
         self,
@@ -148,7 +381,7 @@ class WithLiveImageService:
             if detail_desc:
                 return detail_desc
 
-        return "暂无直播描述"
+        return "不明"
 
     def _read_snapshot(self) -> Dict[str, Any]:
         if not self.cache_path.exists() or not self.cache_path.is_file():
@@ -340,13 +573,16 @@ class _WithLiveImageRenderer:
     else:
         RESAMPLE = Image.LANCZOS
 
-    def __init__(self, icon_path: Path):
+    def __init__(self, icon_path: Path, project_root: Path):
         self.font_title = self._load_font_safe(42)
         self.font_status = self._load_font_safe(44, weight="Bold")
         self.font_header = self._load_cn_font_safe(44, weight="Bold")
         self.font_meta = self._load_cn_font_safe(30, weight="Bold")
+        self.font_meta_label = self._load_cn_font_safe(30, weight="Bold")
         self.font_desc = self._load_font_safe(32)
+        self.font_desc_cn = self._load_cn_font_safe(32)
         self.icon_status_img = self._load_icon(icon_path)
+        self.face_icon_dir = project_root / "exports" / "icons" / "face"
 
     def render(self, items: List[Dict[str, str]], thumbnails: List[Image.Image]) -> bytes:
         max_height = max(2000, len(items) * 1200)
@@ -407,6 +643,181 @@ class _WithLiveImageRenderer:
         buf = BytesIO()
         final_image.save(buf, format="PNG")
         return buf.getvalue()
+
+    def render_detail_enhanced(self, item: Dict[str, Any], thumbnail: Image.Image) -> bytes:
+        max_height = 3200
+        canvas = Image.new("RGB", (self.WIDTH, max_height), "#FFFFFF")
+        self._render_header(canvas)
+        draw = ImageDraw.Draw(canvas)
+
+        current_y = self.HEADER_H + 24
+        thumb_resized = self._resize_thumbnail(thumbnail)
+        canvas.paste(thumb_resized, (0, current_y), thumb_resized)
+
+        current_y += thumb_resized.height + 36
+        draw.text(
+            (40, current_y),
+            str(item.get("title") or ""),
+            fill=self.C_TEXT_MAIN,
+            font=self.font_title,
+        )
+
+        title_height = self._measure_text_height(
+            draw,
+            str(item.get("title") or ""),
+            self.font_title,
+        )
+        current_y += title_height + 20
+        draw.text(
+            (40, current_y),
+            str(item.get("time") or ""),
+            fill=self.C_TEXT_META,
+            font=self.font_meta,
+        )
+
+        time_height = self._measure_text_height(
+            draw,
+            str(item.get("time") or ""),
+            self.font_meta,
+        )
+        current_y += time_height + 30
+
+        current_y = self._draw_kv_text(
+            draw=draw,
+            x=40,
+            y=current_y,
+            label="直播方向",
+            value=str(item.get("orientation_text") or "不明"),
+        )
+        current_y = self._draw_kv_text(
+            draw=draw,
+            x=40,
+            y=current_y,
+            label="直播地点",
+            value=str(item.get("location_text") or "不明"),
+        )
+
+        draw.text((40, current_y), "参加角色", fill=self.C_TEXT_META, font=self.font_meta_label)
+        current_y += self._measure_text_height(draw, "参加角色", self.font_meta_label) + 14
+        current_y = self._draw_character_avatars(
+            canvas=canvas,
+            draw=draw,
+            x=40,
+            y=current_y,
+            character_ids=item.get("character_ids") or [],
+        )
+
+        current_y = self._draw_kv_text(
+            draw=draw,
+            x=40,
+            y=current_y,
+            label="角色服装",
+            value=str(item.get("costume_text") or "不明"),
+        )
+
+        current_y += 6
+        current_y = self._draw_wrapped_text(
+            draw=draw,
+            x=40,
+            y=current_y,
+            text=str(item.get("description") or ""),
+            font=self.font_desc,
+            color=self.C_TEXT_MAIN,
+            max_width=self.WIDTH - 80,
+            line_spacing=12,
+        )
+
+        final_height = min(max_height, max(current_y + 40, self.HEADER_H + 300))
+        final_image = canvas.crop((0, 0, self.WIDTH, final_height))
+        buf = BytesIO()
+        final_image.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def _draw_kv_text(
+        self,
+        draw: ImageDraw.ImageDraw,
+        x: int,
+        y: int,
+        label: str,
+        value: str,
+    ) -> int:
+        label_text = f"{label}: "
+        draw.text((x, y), label_text, fill=self.C_TEXT_META, font=self.font_meta_label)
+        label_width = self._measure_text_width(draw, label_text, self.font_meta_label)
+        draw.text((x + label_width, y), value, fill=self.C_TEXT_MAIN, font=self.font_desc)
+        line_h = max(
+            self._measure_text_height(draw, label_text, self.font_meta_label),
+            self._measure_text_height(draw, value, self.font_desc),
+        )
+        return y + line_h + 16
+
+    def _draw_character_avatars(
+        self,
+        canvas: Image.Image,
+        draw: ImageDraw.ImageDraw,
+        x: int,
+        y: int,
+        character_ids: List[int],
+    ) -> int:
+        if not character_ids:
+            draw.text((x, y), "暂无角色信息", fill=self.C_TEXT_MAIN, font=self.font_desc_cn)
+            return y + self._measure_text_height(draw, "暂无角色信息", self.font_desc_cn) + 18
+
+        avatar_size = 76
+        gap = 12
+        max_x = self.WIDTH - 40
+        current_x = x
+        current_y = y
+        row_height = avatar_size
+
+        for character_id in character_ids:
+            if current_x + avatar_size > max_x:
+                current_x = x
+                current_y += avatar_size + gap
+
+            avatar = self._load_face_avatar(character_id, avatar_size)
+            canvas.paste(avatar, (current_x, current_y), avatar)
+            current_x += avatar_size + gap
+
+        return current_y + row_height + 18
+
+    def _load_face_avatar(self, character_id: int, size: int) -> Image.Image:
+        file_path = self.face_icon_dir / f"icon_face_sd_{character_id}_01.png"
+        if not file_path.exists() or not file_path.is_file():
+            return self._build_avatar_placeholder(size)
+
+        try:
+            with Image.open(file_path) as loaded:
+                source = loaded.convert("RGBA")
+        except Exception as exc:
+            logger.warning(f"读取角色头像失败: {file_path} error={exc}")
+            return self._build_avatar_placeholder(size)
+
+        if source.size != (size, size):
+            source = source.resize((size, size), self.RESAMPLE)
+
+        mask = Image.new("L", (size, size), 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.ellipse((0, 0, size - 1, size - 1), fill=255)
+        source_alpha = source.getchannel("A")
+        merged_alpha = ImageChops.multiply(source_alpha, mask)
+        source.putalpha(merged_alpha)
+        return source
+
+    def _build_avatar_placeholder(self, size: int) -> Image.Image:
+        image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        draw.ellipse((0, 0, size - 1, size - 1), fill="#d1d5db", outline="#9ca3af")
+        text = "?"
+        text_w = self._measure_text_width(draw, text, self.font_desc_cn)
+        text_h = self._measure_text_height(draw, text, self.font_desc_cn)
+        draw.text(
+            ((size - text_w) // 2, (size - text_h) // 2 - 1),
+            text,
+            fill="#6b7280",
+            font=self.font_desc_cn,
+        )
+        return image
 
     def _load_icon(self, icon_path: Path) -> Optional[Image.Image]:
         if not icon_path.exists() or not icon_path.is_file():
@@ -699,8 +1110,10 @@ async def generate_with_live_image(auto_refresh_on_miss: bool = True) -> bytes:
 async def generate_with_live_detail_image(
     index: int,
     auto_refresh_on_miss: bool = True,
+    show_spoiler: bool = False,
 ) -> bytes:
     return await get_with_live_image_service().build_live_detail_image(
         index=index,
         auto_refresh_on_miss=auto_refresh_on_miss,
+        show_spoiler=show_spoiler,
     )

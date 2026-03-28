@@ -234,7 +234,10 @@ class WithLiveImageCacheTest(unittest.IsolatedAsyncioTestCase):
 
     def test_renderer_wrap_lines_preserves_manual_newline(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
-            renderer = _WithLiveImageRenderer(icon_path=Path(tmp_dir) / "missing.png")
+            renderer = _WithLiveImageRenderer(
+                icon_path=Path(tmp_dir) / "missing.png",
+                project_root=Path(tmp_dir),
+            )
             draw = ImageDraw.Draw(Image.new("RGB", (1080, 500), "#ffffff"))
             lines = renderer._split_wrapped_lines(
                 draw=draw,
@@ -246,6 +249,31 @@ class WithLiveImageCacheTest(unittest.IsolatedAsyncioTestCase):
             self.assertGreaterEqual(len(lines), 2)
             self.assertEqual(lines[0], "第一行")
             self.assertEqual(lines[1], "第二行")
+
+    def test_renderer_face_avatar_preserves_original_alpha(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            face_dir = root / "exports" / "icons" / "face"
+            face_dir.mkdir(parents=True, exist_ok=True)
+
+            source = Image.new("RGBA", (76, 76), (0, 0, 0, 0))
+            source_draw = ImageDraw.Draw(source)
+            source_draw.rectangle((28, 28, 48, 48), fill=(255, 0, 0, 255))
+            source.save(face_dir / "icon_face_sd_1031_01.png")
+
+            renderer = _WithLiveImageRenderer(
+                icon_path=root / "missing.png",
+                project_root=root,
+            )
+            avatar = renderer._load_face_avatar(1031, 76)
+
+            # 圆内但角色透明区应保持透明，防止出现黑底
+            self.assertEqual(avatar.getpixel((10, 38))[3], 0)
+            r, g, b, a = avatar.getpixel((38, 38))
+            self.assertGreater(r, 200)
+            self.assertLess(g, 40)
+            self.assertLess(b, 40)
+            self.assertEqual(a, 255)
 
     async def test_build_live_detail_image_index_out_of_range(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -274,6 +302,342 @@ class WithLiveImageCacheTest(unittest.IsolatedAsyncioTestCase):
                 await service.build_live_detail_image(index=3, auto_refresh_on_miss=False)
 
             self.assertIn("1-2", str(ctx.exception))
+
+    async def test_build_live_detail_image_non_enterable_uses_legacy_renderer(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            snapshot_path = root / "cache" / "game_api" / "with_live.json"
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot = {
+                "home_trailer_list": [
+                    {
+                        "archives_id": "A1",
+                        "name": "详情场次",
+                        "live_id": "L1",
+                        "thumbnail_image_url": "https://example.com/covers/detail.jpg",
+                        "live_start_time": "2026-03-25T13:00:00+09:00",
+                        "description": "第一行\n第二行",
+                    }
+                ],
+                "home_trailer_enterable_list": [],
+                "home_trailer_enter_details": [
+                    {
+                        "live_id": "L1",
+                        "status": "ok",
+                        "detail": {
+                            "is_horizontal": False,
+                            "live_location_id": 41,
+                            "characters": [{"character_id": 1031}],
+                            "costume_ids": [1001],
+                        },
+                    }
+                ],
+            }
+            snapshot_path.write_text(
+                json.dumps(snapshot, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            image_bytes = self._build_png_bytes("#9ed8ff")
+
+            class _FakeAsyncClient:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    return False
+
+                async def get(self, url, timeout=None):
+                    return _FakeResponse(image_bytes)
+
+            service = WithLiveImageService(project_root=root)
+            with patch(
+                "src.core.services.with_live_image.httpx.AsyncClient",
+                _FakeAsyncClient,
+            ), patch.object(
+                _WithLiveImageRenderer,
+                "render_detail",
+                autospec=True,
+                return_value=b"legacy",
+            ) as legacy_mock, patch.object(
+                _WithLiveImageRenderer,
+                "render_detail_enhanced",
+                autospec=True,
+                return_value=b"enhanced",
+            ) as enhanced_mock:
+                rendered = await service.build_live_detail_image(
+                    index=1,
+                    auto_refresh_on_miss=False,
+                    show_spoiler=True,
+                )
+
+            self.assertEqual(rendered, b"legacy")
+            legacy_mock.assert_called_once()
+            enhanced_mock.assert_not_called()
+
+    async def test_build_live_detail_image_enterable_hides_spoiler_without_flag(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            snapshot_path = root / "cache" / "game_api" / "with_live.json"
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot = {
+                "home_trailer_list": [
+                    {
+                        "archives_id": "A1",
+                        "name": "详情场次",
+                        "live_id": "L1",
+                        "thumbnail_image_url": "https://example.com/covers/detail.jpg",
+                        "live_start_time": "2026-03-25T13:00:00+09:00",
+                        "description": "第一行\n第二行",
+                    }
+                ],
+                "home_trailer_enterable_list": [
+                    {
+                        "archives_id": "A1",
+                        "live_id": "L1",
+                    }
+                ],
+                "home_trailer_enter_details": [
+                    {
+                        "live_id": "L1",
+                        "status": "ok",
+                        "detail": {
+                            "is_horizontal": False,
+                            "live_location_id": 41,
+                            "characters": [{"character_id": 1031}],
+                            "costume_ids": [1001],
+                        },
+                    }
+                ],
+            }
+            snapshot_path.write_text(
+                json.dumps(snapshot, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            image_bytes = self._build_png_bytes("#9ed8ff")
+
+            class _FakeAsyncClient:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    return False
+
+                async def get(self, url, timeout=None):
+                    return _FakeResponse(image_bytes)
+
+            service = WithLiveImageService(project_root=root)
+            with patch(
+                "src.core.services.with_live_image.httpx.AsyncClient",
+                _FakeAsyncClient,
+            ), patch.object(
+                _WithLiveImageRenderer,
+                "render_detail",
+                autospec=True,
+                return_value=b"legacy",
+            ) as legacy_mock, patch.object(
+                _WithLiveImageRenderer,
+                "render_detail_enhanced",
+                autospec=True,
+                return_value=b"enhanced",
+            ) as enhanced_mock:
+                rendered = await service.build_live_detail_image(
+                    index=1,
+                    auto_refresh_on_miss=False,
+                    show_spoiler=False,
+                )
+
+            self.assertEqual(rendered, b"enhanced")
+            legacy_mock.assert_not_called()
+            enhanced_mock.assert_called_once()
+            detail_item = enhanced_mock.call_args.args[1]
+            self.assertEqual(detail_item["orientation_text"], "縦画面")
+            self.assertEqual(detail_item["character_ids"], [1031])
+            self.assertEqual(
+                detail_item["location_text"],
+                WithLiveImageService.SPOILER_HIDDEN_TEXT,
+            )
+            self.assertEqual(
+                detail_item["costume_text"],
+                WithLiveImageService.SPOILER_HIDDEN_TEXT,
+            )
+
+    async def test_build_live_detail_image_enterable_spoiler_shows_masterdata(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            snapshot_path = root / "cache" / "game_api" / "with_live.json"
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot = {
+                "home_trailer_list": [
+                    {
+                        "archives_id": "A1",
+                        "name": "详情场次",
+                        "live_id": "L1",
+                        "thumbnail_image_url": "https://example.com/covers/detail.jpg",
+                        "live_start_time": "2026-03-25T13:00:00+09:00",
+                        "description": "第一行\n第二行",
+                    }
+                ],
+                "home_trailer_enterable_list": [
+                    {
+                        "archives_id": "A1",
+                        "live_id": "L1",
+                    }
+                ],
+                "home_trailer_enter_details": [
+                    {
+                        "live_id": "L1",
+                        "status": "ok",
+                        "detail": {
+                            "is_horizontal": True,
+                            "live_location_id": 41,
+                            "characters": [{"character_id": 1031}],
+                            "costume_ids": [1001],
+                        },
+                    }
+                ],
+            }
+            snapshot_path.write_text(
+                json.dumps(snapshot, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            masterdata_dir = root / "masterdata"
+            masterdata_dir.mkdir(parents=True, exist_ok=True)
+            (masterdata_dir / "LiveLocations.yaml").write_text(
+                "- Id: 41\n  Label: 花帆自室(家具無し)\n",
+                encoding="utf-8",
+            )
+            (masterdata_dir / "Costumes.yaml").write_text(
+                "- Id: 1001\n  Label: 制服(冬)_上靴\n",
+                encoding="utf-8",
+            )
+
+            image_bytes = self._build_png_bytes("#9ed8ff")
+
+            class _FakeAsyncClient:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    return False
+
+                async def get(self, url, timeout=None):
+                    return _FakeResponse(image_bytes)
+
+            service = WithLiveImageService(project_root=root)
+            with patch(
+                "src.core.services.with_live_image.httpx.AsyncClient",
+                _FakeAsyncClient,
+            ), patch.object(
+                _WithLiveImageRenderer,
+                "render_detail",
+                autospec=True,
+                return_value=b"legacy",
+            ) as legacy_mock, patch.object(
+                _WithLiveImageRenderer,
+                "render_detail_enhanced",
+                autospec=True,
+                return_value=b"enhanced",
+            ) as enhanced_mock:
+                rendered = await service.build_live_detail_image(
+                    index=1,
+                    auto_refresh_on_miss=False,
+                    show_spoiler=True,
+                )
+
+            self.assertEqual(rendered, b"enhanced")
+            legacy_mock.assert_not_called()
+            enhanced_mock.assert_called_once()
+            detail_item = enhanced_mock.call_args.args[1]
+            self.assertEqual(detail_item["orientation_text"], "横画面")
+            self.assertEqual(detail_item["location_text"], "花帆自室(家具無し)")
+            self.assertEqual(detail_item["costume_text"], "制服(冬)_上靴")
+
+    async def test_build_live_detail_image_enterable_without_ok_detail_uses_legacy(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            snapshot_path = root / "cache" / "game_api" / "with_live.json"
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot = {
+                "home_trailer_list": [
+                    {
+                        "archives_id": "A1",
+                        "name": "详情场次",
+                        "live_id": "L1",
+                        "thumbnail_image_url": "https://example.com/covers/detail.jpg",
+                        "live_start_time": "2026-03-25T13:00:00+09:00",
+                        "description": "第一行\n第二行",
+                    }
+                ],
+                "home_trailer_enterable_list": [
+                    {
+                        "archives_id": "A1",
+                        "live_id": "L1",
+                    }
+                ],
+                "home_trailer_enter_details": [
+                    {
+                        "live_id": "L1",
+                        "status": "error",
+                        "detail": None,
+                    }
+                ],
+            }
+            snapshot_path.write_text(
+                json.dumps(snapshot, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            image_bytes = self._build_png_bytes("#9ed8ff")
+
+            class _FakeAsyncClient:
+                def __init__(self, *args, **kwargs):
+                    pass
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, exc_type, exc, tb):
+                    return False
+
+                async def get(self, url, timeout=None):
+                    return _FakeResponse(image_bytes)
+
+            service = WithLiveImageService(project_root=root)
+            with patch(
+                "src.core.services.with_live_image.httpx.AsyncClient",
+                _FakeAsyncClient,
+            ), patch.object(
+                _WithLiveImageRenderer,
+                "render_detail",
+                autospec=True,
+                return_value=b"legacy",
+            ) as legacy_mock, patch.object(
+                _WithLiveImageRenderer,
+                "render_detail_enhanced",
+                autospec=True,
+                return_value=b"enhanced",
+            ) as enhanced_mock:
+                rendered = await service.build_live_detail_image(
+                    index=1,
+                    auto_refresh_on_miss=False,
+                    show_spoiler=True,
+                )
+
+            self.assertEqual(rendered, b"legacy")
+            legacy_mock.assert_called_once()
+            enhanced_mock.assert_not_called()
 
 
 if __name__ == "__main__":
