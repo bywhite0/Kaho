@@ -1,4 +1,3 @@
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -54,19 +53,11 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
         cls.data_dir = root / "masterdata"
         cls.data_dir.mkdir(parents=True, exist_ok=True)
         cls.meta = build_index_fixture(cls.data_dir)
-
-        cls.db_path = root / "data.db"
-        cls._prev_db_path = os.getenv("KAHO_DB_PATH")
-        os.environ["KAHO_DB_PATH"] = str(cls.db_path)
         cls.dm = DataManager(str(cls.data_dir))
 
     @classmethod
     def tearDownClass(cls):
-        cls.dm.store._engine.dispose()
-        if cls._prev_db_path is None:
-            os.environ.pop("KAHO_DB_PATH", None)
-        else:
-            os.environ["KAHO_DB_PATH"] = cls._prev_db_path
+        cls.dm.close()
         cls._tmp_dir.cleanup()
 
     async def test_search_empty_query(self):
