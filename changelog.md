@@ -1,4 +1,15 @@
 # 更新日志
+## 0.7.0 - Unreleased
+
+- 数据存储重构为文件缓存方案，移除对 SQLite 数据库的运行时依赖。
+- `/dbrebuild` 改为全量重建文件缓存，重建后仍会刷新运行时数据。
+- 版本同步改为按版本号与文件哈希增量刷新，删除的 YAML 会自动清理对应缓存。
+
+### 技术改动
+- 引入 `FileDB`、`MasterDataCacheManager`、`MusicChartCache` 三层组件，统一落盘到 `data/llll`。
+- 删除 `src/core/services/db/*` 与 SQLAlchemy 相关实现。
+- 更新测试用例，移除 `KAHO_DB_PATH` 与 `_engine` 依赖，增加缓存删除清理与文件变更回归。
+
 ## 0.6.0 - 2026-03-28
 
 - 新增 `/live_detail [--spoiler]`，可生成指定场次直播详情图。

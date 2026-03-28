@@ -1,4 +1,3 @@
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -99,12 +98,8 @@ class DataManagerResetTest(unittest.TestCase):
             root = Path(tmp_dir)
             data_dir = root / "masterdata"
             data_dir.mkdir(parents=True, exist_ok=True)
-            db_path = root / "data.db"
-
-            prev = os.getenv("KAHO_DB_PATH")
-            os.environ["KAHO_DB_PATH"] = str(db_path)
+            dm = DataManager(str(data_dir))
             try:
-                dm = DataManager(str(data_dir))
                 dm.card_datas.append({"Id": 1})
                 dm._loaded.add("card_datas")
                 dm.style_movie_series.add(1001)
@@ -115,12 +110,8 @@ class DataManagerResetTest(unittest.TestCase):
                 self.assertEqual(dm._loaded, set())
                 self.assertEqual(dm.style_movie_series, set())
                 self.assertEqual(dm.token_skill_map, {})
-                dm.store._engine.dispose()
             finally:
-                if prev is None:
-                    os.environ.pop("KAHO_DB_PATH", None)
-                else:
-                    os.environ["KAHO_DB_PATH"] = prev
+                dm.close()
 
     def test_rebuild_then_reset_runtime_cache_uses_new_masterdata(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -144,11 +135,8 @@ class DataManagerResetTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            db_path = root / "data.db"
-            prev = os.getenv("KAHO_DB_PATH")
-            os.environ["KAHO_DB_PATH"] = str(db_path)
+            dm = DataManager(str(data_dir))
             try:
-                dm = DataManager(str(data_dir))
                 dm.sync_version_cache(str(version_path))
                 self.assertEqual(len(dm.search_card_series("旧卡名", limit=10)), 1)
                 self.assertEqual(len(dm.search_card_series("新卡名", limit=10)), 0)
@@ -171,12 +159,8 @@ class DataManagerResetTest(unittest.TestCase):
 
                 self.assertEqual(len(dm.search_card_series("新卡名", limit=10)), 1)
                 self.assertEqual(len(dm.search_card_series("旧卡名", limit=10)), 0)
-                dm.store._engine.dispose()
             finally:
-                if prev is None:
-                    os.environ.pop("KAHO_DB_PATH", None)
-                else:
-                    os.environ["KAHO_DB_PATH"] = prev
+                dm.close()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,12 +32,8 @@ class FormattersTest(unittest.TestCase):
             data_dir = root / "masterdata"
             data_dir.mkdir(parents=True, exist_ok=True)
             meta = build_skill_fixture(data_dir)
-            db_path = root / "data.db"
-
-            prev = os.getenv("KAHO_DB_PATH")
-            os.environ["KAHO_DB_PATH"] = str(db_path)
+            dm = DataManager(str(data_dir))
             try:
-                dm = DataManager(str(data_dir))
                 skill_data = dm.get_all_skills_data(meta["root_series_id"])
                 view = build_skill_view(dm, skill_data, title_prefix="技能:", cost_str="（AP 6）")
                 text = print_merged_skill(dm, skill_data, title_prefix="技能:", cost_str="（AP 6）")
@@ -46,12 +41,8 @@ class FormattersTest(unittest.TestCase):
                 self.assertTrue(view.get("name"))
                 self.assertIsInstance(text, str)
                 self.assertTrue(text.strip())
-                dm.store._engine.dispose()
             finally:
-                if prev is None:
-                    os.environ.pop("KAHO_DB_PATH", None)
-                else:
-                    os.environ["KAHO_DB_PATH"] = prev
+                dm.close()
 
 
 if __name__ == "__main__":

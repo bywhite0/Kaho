@@ -4,7 +4,6 @@ version = "0.6.0"
 requires-python = ">=3.9"
 dependencies = [
   "nonebot2[aiohttp,fastapi,httpx]",
-  "sqlalchemy>=2.0",
   "nonebot-adapter-onebot>=2.4.6",
   "jinja2>=3.1.6",
   "pillow>=11.3.0",
