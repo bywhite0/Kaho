@@ -8,13 +8,14 @@ import yaml
 
 from .file_db import FileDB
 
+_YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
 
 class MasterDataCacheManager:
     def __init__(self, data_dir: str, cache_dir: str, state_db: FileDB):
         self.data_dir = os.path.realpath(data_dir)
         self.cache_dir = os.path.realpath(cache_dir)
         self.state_db = state_db
-        self._index_cache: dict[str, dict[int, dict[str, Any]]] = {}
         os.makedirs(self.cache_dir, exist_ok=True)
 
     def load_yaml_file(
@@ -25,25 +26,29 @@ class MasterDataCacheManager:
         path = os.path.join(self.data_dir, filename)
         if not os.path.exists(path):
             return None
-        mtime = os.path.getmtime(path)
+        mtime, file_size = self._get_file_stat(path)
         files_state = self._get_files_state()
         state = files_state.get(filename) or {}
         cache_path = self._cache_path(filename)
+        has_cache = os.path.exists(cache_path)
 
-        if state.get("mtime") == mtime:
-            cached = self._read_cached_json(cache_path)
-            if cached is not None:
-                self._build_index(filename, cached)
-                return cached
+        if (
+            has_cache
+            and not state.get("cache_stale", False)
+            and state.get("mtime") == mtime
+            and state.get("file_size") == file_size
+        ):
+            return self._read_cached_json(cache_path)
 
         file_hash = self._compute_file_hash(path)
-        if state.get("file_hash") == file_hash:
+        if has_cache and state.get("file_hash") == file_hash:
             cached = self._read_cached_json(cache_path)
             if cached is not None:
                 state["mtime"] = mtime
+                state["file_size"] = file_size
+                state["cache_stale"] = False
                 files_state[filename] = state
                 self._save_files_state(files_state)
-                self._build_index(filename, cached)
                 return cached
 
         parsed = self._parse_yaml(path, sanitizer)
@@ -51,17 +56,19 @@ class MasterDataCacheManager:
         row_count = self._count_rows(parsed)
         files_state[filename] = {
             "mtime": mtime,
+            "file_size": file_size,
             "file_hash": file_hash,
             "row_count": row_count,
+            "cache_stale": False,
         }
         self._save_files_state(files_state)
-        self._build_index(filename, parsed)
         return parsed
 
     def sync_incremental(
         self,
         sanitizer: Optional[Callable[[str], str]] = None,
     ) -> int:
+        _ = sanitizer
         total_changed = 0
         files_state = self._get_files_state()
         yaml_files = self._list_yaml_files()
@@ -72,28 +79,39 @@ class MasterDataCacheManager:
             row_count = int((files_state.get(filename) or {}).get("row_count") or 0)
             total_changed += row_count
             files_state.pop(filename, None)
-            self._index_cache.pop(filename, None)
             self._remove_cache_file(filename)
-        self._save_files_state(files_state)
 
         for filename in yaml_files:
-            before = files_state.get(filename) or {}
-            before_hash = before.get("file_hash")
-            before_rows = int(before.get("row_count") or 0)
-
-            data = self.load_yaml_file(filename, sanitizer=sanitizer)
-            if data is None:
+            path = os.path.join(self.data_dir, filename)
+            mtime, file_size = self._get_file_stat(path)
+            cache_path = self._cache_path(filename)
+            state = files_state.get(filename)
+            if state is None:
+                files_state[filename] = {
+                    "mtime": mtime,
+                    "file_size": file_size,
+                    "file_hash": "",
+                    "row_count": 0,
+                    "cache_stale": True,
+                }
+                total_changed += 1
                 continue
-            after = self._get_files_state().get(filename) or {}
-            after_hash = after.get("file_hash")
-            after_rows = int(after.get("row_count") or 0)
-            files_state = self._get_files_state()
 
-            if before_hash != after_hash:
-                if before_hash is None:
-                    total_changed += after_rows
-                else:
-                    total_changed += max(before_rows, after_rows)
+            # 启动同步阶段只做轻量标记，避免解析 YAML 带来大内存峰值。
+            unchanged = (
+                state.get("mtime") == mtime
+                and state.get("file_size") == file_size
+                and not state.get("cache_stale", False)
+                and os.path.exists(cache_path)
+            )
+            if unchanged:
+                continue
+
+            state["mtime"] = mtime
+            state["file_size"] = file_size
+            state["cache_stale"] = True
+            files_state[filename] = state
+            total_changed += 1
 
         self._save_files_state(files_state)
         return total_changed
@@ -102,28 +120,27 @@ class MasterDataCacheManager:
         self,
         sanitizer: Optional[Callable[[str], str]] = None,
     ) -> int:
+        _ = sanitizer
         self.clear()
-        total_changed = 0
         files_state: dict[str, dict[str, Any]] = {}
         for filename in self._list_yaml_files():
-            data = self.load_yaml_file(filename, sanitizer=sanitizer)
-            if data is None:
-                continue
-            state = self._get_files_state().get(filename) or {}
-            files_state[filename] = state
-            total_changed += int(state.get("row_count") or 0)
+            path = os.path.join(self.data_dir, filename)
+            mtime, file_size = self._get_file_stat(path)
+            files_state[filename] = {
+                "mtime": mtime,
+                "file_size": file_size,
+                "file_hash": "",
+                "row_count": 0,
+                "cache_stale": True,
+            }
         self._save_files_state(files_state)
-        return total_changed
+        return len(files_state)
 
     def clear(self) -> None:
         files_state = self._get_files_state()
         for filename in list(files_state.keys()):
             self._remove_cache_file(filename)
-        self._index_cache = {}
         self._save_files_state({})
-
-    def get_index(self, filename: str) -> dict[int, dict[str, Any]]:
-        return self._index_cache.get(filename, {})
 
     def _get_files_state(self) -> dict[str, dict[str, Any]]:
         files = self.state_db.get_copy("masterdata.files", {})
@@ -160,11 +177,16 @@ class MasterDataCacheManager:
         path: str,
         sanitizer: Optional[Callable[[str], str]] = None,
     ):
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-        if sanitizer:
-            content = sanitizer(content)
-        return yaml.safe_load(content)
+        loader = _YAML_LOADER
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return yaml.load(f, Loader=loader)
+        except Exception:
+            if sanitizer is None:
+                raise
+            with open(path, "r", encoding="utf-8") as f:
+                content = sanitizer(f.read())
+            return yaml.load(content, Loader=loader)
 
     def _write_cached_json(self, cache_path: str, payload: Any) -> None:
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)
@@ -199,6 +221,10 @@ class MasterDataCacheManager:
                 h.update(chunk)
         return h.hexdigest()
 
+    def _get_file_stat(self, path: str) -> tuple[float, int]:
+        stat = os.stat(path)
+        return stat.st_mtime, int(stat.st_size)
+
     def _count_rows(self, data: Any) -> int:
         if not isinstance(data, list):
             return 0
@@ -214,18 +240,3 @@ class MasterDataCacheManager:
                 continue
             count += 1
         return count
-
-    def _build_index(self, filename: str, data: Any) -> None:
-        index: dict[int, dict[str, Any]] = {}
-        if isinstance(data, list):
-            for entry in data:
-                if not isinstance(entry, dict):
-                    continue
-                if "Id" not in entry:
-                    continue
-                try:
-                    entry_id = int(entry["Id"])
-                except Exception:
-                    continue
-                index[entry_id] = entry
-        self._index_cache[filename] = index
