@@ -398,19 +398,45 @@ class WithLiveImageService:
         return {}
 
     def _extract_archives(self, snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
+        station_items = self._to_dict_list(snapshot.get("with_station_archive_list"))
         trailer_items = self._to_dict_list(snapshot.get("home_trailer_list"))
         if trailer_items:
-            return trailer_items
+            return self._merge_archives(trailer_items, station_items)
 
         home_items = self._to_dict_list(snapshot.get("with_live_archive_home"))
         if home_items:
-            return home_items
+            return self._merge_archives(home_items, station_items)
 
         live_items = self._to_dict_list(snapshot.get("with_live_archive_live_home"))
         with_live_trailer_items = self._to_dict_list(
             snapshot.get("with_live_archive_trailer_home")
         )
-        return [*live_items, *with_live_trailer_items]
+        return self._merge_archives([*live_items, *with_live_trailer_items], station_items)
+
+    def _merge_archives(
+        self,
+        primary: List[Dict[str, Any]],
+        secondary: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        result: List[Dict[str, Any]] = []
+        seen = set()
+        for item in [*primary, *secondary]:
+            key = self._archive_key(item)
+            if key and key in seen:
+                continue
+            if key:
+                seen.add(key)
+            result.append(dict(item))
+        return result
+
+    def _archive_key(self, item: Dict[str, Any]) -> str:
+        archives_id = str(item.get("archives_id") or "").strip()
+        if archives_id:
+            return f"a:{archives_id}"
+        live_id = str(item.get("live_id") or "").strip()
+        if live_id:
+            return f"l:{live_id}"
+        return ""
 
     def _to_dict_list(self, values: Any) -> List[Dict[str, Any]]:
         if not isinstance(values, list):

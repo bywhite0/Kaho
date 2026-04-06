@@ -152,6 +152,40 @@ class WithLiveImageCacheTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(rendered.startswith(b"\x89PNG\r\n\x1a\n"))
 
+    def test_extract_archives_merges_station_list_without_duplication(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            service = WithLiveImageService(project_root=Path(tmp_dir))
+            snapshot = {
+                "home_trailer_list": [
+                    {
+                        "archives_id": "W1",
+                        "live_id": "WLIVE1",
+                        "name": "With 场次",
+                        "live_type": 2,
+                    }
+                ],
+                "with_station_archive_list": [
+                    {
+                        "archives_id": "S1",
+                        "live_id": "SLIVE1",
+                        "name": "Station 场次",
+                        "live_type": 3,
+                    },
+                    {
+                        "archives_id": "W1",
+                        "live_id": "WLIVE1",
+                        "name": "With 场次重复",
+                        "live_type": 2,
+                    },
+                ],
+            }
+
+            archives = service._extract_archives(snapshot)
+
+            self.assertEqual(len(archives), 2)
+            ids = {str(item.get("archives_id")) for item in archives}
+            self.assertEqual(ids, {"W1", "S1"})
+
     def test_format_time_live_started_uses_live_text(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             service = WithLiveImageService(project_root=Path(tmp_dir))
