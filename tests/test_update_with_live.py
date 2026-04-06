@@ -185,6 +185,7 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
         open_past = (now - timedelta(minutes=15)).isoformat().replace("+00:00", "Z")
         open_future = (now + timedelta(hours=2)).isoformat().replace("+00:00", "Z")
         start_soon = (now + timedelta(minutes=20)).isoformat().replace("+00:00", "Z")
+        start_past = (now - timedelta(minutes=5)).isoformat().replace("+00:00", "Z")
         start_late = (now + timedelta(hours=3)).isoformat().replace("+00:00", "Z")
 
         fake_client = _RouteClient(
@@ -211,7 +212,7 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
                                     "live_type": 1,
                                     "name": "fes-enterable",
                                     "open_time": open_past,
-                                    "live_start_time": start_soon,
+                                    "live_start_time": start_past,
                                     "thumbnail_image_url": "https://example.com/f1.jpg",
                                 },
                                 {
@@ -290,6 +291,7 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
         source = result["source"]
         self.assertEqual(source["archive_get_home_total_count"], 3)
         self.assertEqual(source["archive_get_home_with_count"], 2)
+        self.assertEqual(source["archive_get_home_station_count"], 0)
         self.assertEqual(source["archive_get_home_fes_count"], 1)
         self.assertEqual(source["enterable_total_count"], 2)
         self.assertEqual(source["enterable_with_count"], 1)
@@ -327,6 +329,226 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(
             any(call["path"] == "/feslive/enter" for call in fake_client.calls)
+        )
+
+    async def test_refresh_supports_with_station_list_and_station_detail(self):
+        config_path = self.root / "cache" / "game_api" / "config.json"
+        self._write_config(config_path, token="token-ok")
+        service = GameApiService(project_root=self.root)
+
+        now = datetime.now(timezone.utc)
+        open_future = (now + timedelta(hours=2)).isoformat().replace("+00:00", "Z")
+        start_type2 = (now + timedelta(hours=3)).isoformat().replace("+00:00", "Z")
+        start_station = (now + timedelta(hours=5)).isoformat().replace("+00:00", "Z")
+
+        fake_client = _RouteClient(
+            {
+                "/archive/get_home": [
+                    lambda url, _json, _headers: _resp(url, 200, {"ok": True}),
+                    lambda url, _json, _headers: _resp(
+                        url,
+                        200,
+                        {
+                            "live_archive_list": [
+                                {
+                                    "archives_id": "W1",
+                                    "live_id": "WLIVE1",
+                                    "live_type": 2,
+                                    "name": "with-item",
+                                    "open_time": open_future,
+                                    "live_start_time": start_type2,
+                                }
+                            ],
+                            "trailer_archive_list": [],
+                        },
+                    ),
+                ],
+                "/archive/get_archive_list": [
+                    lambda url, _json, _headers: _resp(
+                        url,
+                        200,
+                        {
+                            "archive_list": [
+                                {
+                                    "archives_id": "W1",
+                                    "live_id": "WLIVE1",
+                                    "live_type": 2,
+                                    "name": "with-item",
+                                    "live_start_time": start_type2,
+                                }
+                            ]
+                        },
+                    ),
+                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []}),
+                ],
+                "/archive/get_with_station_list": [
+                    lambda url, _json, _headers: _resp(
+                        url,
+                        200,
+                        {
+                            "archive_list": [
+                                {
+                                    "archives_id": "S1",
+                                    "live_id": "SLIVE1",
+                                    "live_type": 3,
+                                    "name": "station-item",
+                                    "live_start_time": start_station,
+                                }
+                            ]
+                        },
+                    )
+                ],
+                "/archive/get_with_station_data": [
+                    lambda url, request_json, _headers: _resp(
+                        url,
+                        200,
+                        {
+                            "archives_id": request_json["archives_id"],
+                            "detail": "station-ok",
+                        },
+                    )
+                ],
+            }
+        )
+
+        with patch(
+            "src.core.services.game_api.httpx.AsyncClient",
+            lambda *args, **kwargs: fake_client,
+        ):
+            result = await service.refresh_with_live(command_args="with_live")
+
+        self.assertEqual(result["latest_archive"]["archives_id"], "S1")
+        self.assertEqual(
+            result["latest_archive_detail_meta"]["source"],
+            "archive_get_with_station_data",
+        )
+        self.assertEqual(len(result["with_station_archive_list"]), 1)
+        self.assertEqual(result["with_station_archive_list"][0]["archives_id"], "S1")
+        self.assertTrue(
+            any(call["path"] == "/archive/get_with_station_list" for call in fake_client.calls)
+        )
+        self.assertTrue(
+            any(call["path"] == "/archive/get_with_station_data" for call in fake_client.calls)
+        )
+
+    async def test_refresh_station_not_in_enterable_pipeline(self):
+        config_path = self.root / "cache" / "game_api" / "config.json"
+        self._write_config(config_path, token="token-ok")
+        service = GameApiService(project_root=self.root)
+
+        now = datetime.now(timezone.utc)
+        open_past = (now - timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
+        start_future = (now + timedelta(minutes=30)).isoformat().replace("+00:00", "Z")
+
+        fake_client = _RouteClient(
+            {
+                "/archive/get_home": [
+                    lambda url, _json, _headers: _resp(url, 200, {"ok": True}),
+                    lambda url, _json, _headers: _resp(
+                        url,
+                        200,
+                        {
+                            "live_archive_list": [
+                                {
+                                    "archives_id": "S1",
+                                    "live_id": "SLIVE1",
+                                    "live_type": 3,
+                                    "name": "station-enterable",
+                                    "open_time": open_past,
+                                    "live_start_time": start_future,
+                                }
+                            ],
+                            "trailer_archive_list": [],
+                        },
+                    ),
+                ],
+                "/archive/get_archive_list": [
+                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []}),
+                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []}),
+                ],
+                "/archive/get_with_station_list": [
+                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []})
+                ],
+            }
+        )
+
+        with patch(
+            "src.core.services.game_api.httpx.AsyncClient",
+            lambda *args, **kwargs: fake_client,
+        ):
+            result = await service.refresh_with_live(command_args="with_live")
+
+        source = result["source"]
+        self.assertEqual(source["enterable_total_count"], 0)
+        self.assertEqual(source["enter_detail_success_count"], 0)
+        self.assertEqual(source["enter_detail_failed_count"], 0)
+        self.assertEqual(len(result["home_trailer_enter_details"]), 0)
+
+    async def test_refresh_skip_fes_enter_when_live_not_started(self):
+        config_path = self.root / "cache" / "game_api" / "config.json"
+        self._write_config(config_path, token="token-ok")
+        service = GameApiService(project_root=self.root)
+
+        now = datetime.now(timezone.utc)
+        open_past = (now - timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
+        start_future = (now + timedelta(minutes=30)).isoformat().replace("+00:00", "Z")
+
+        fake_client = _RouteClient(
+            {
+                "/archive/get_home": [
+                    lambda url, _json, _headers: _resp(url, 200, {"ok": True}),
+                    lambda url, _json, _headers: _resp(
+                        url,
+                        200,
+                        {
+                            "live_archive_list": [
+                                {
+                                    "archives_id": "F1",
+                                    "live_id": "FLIVE1",
+                                    "live_type": 1,
+                                    "name": "fes-lobby-only",
+                                    "open_time": open_past,
+                                    "live_start_time": start_future,
+                                }
+                            ],
+                            "trailer_archive_list": [],
+                        },
+                    ),
+                ],
+                "/feslive/lobby": [
+                    lambda url, request_json, _headers: _resp(
+                        url,
+                        200,
+                        {"live_id": request_json["live_id"], "lobby": "ok"},
+                    )
+                ],
+                "/archive/get_archive_list": [
+                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []}),
+                    lambda url, _json, _headers: _resp(url, 200, {"archive_list": []}),
+                ],
+            }
+        )
+
+        with patch(
+            "src.core.services.game_api.httpx.AsyncClient",
+            lambda *args, **kwargs: fake_client,
+        ):
+            result = await service.refresh_with_live(command_args="with_live")
+
+        source = result["source"]
+        self.assertEqual(source["enterable_total_count"], 1)
+        self.assertEqual(source["enter_detail_success_count"], 0)
+        self.assertEqual(source["enter_detail_failed_count"], 0)
+        self.assertFalse(
+            any("403" in str(error) for error in source.get("fetch_errors", []))
+        )
+        self.assertFalse(any(call["path"] == "/feslive/enter" for call in fake_client.calls))
+        self.assertTrue(any(call["path"] == "/feslive/lobby" for call in fake_client.calls))
+        self.assertEqual(len(result["home_trailer_enter_details"]), 1)
+        self.assertEqual(result["home_trailer_enter_details"][0]["status"], "skipped")
+        self.assertEqual(
+            result["home_trailer_enter_details"][0]["detail_source"],
+            "feslive_lobby",
         )
 
     async def test_refresh_token_when_session_invalid(self):
@@ -457,6 +679,7 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
         now = datetime.now(timezone.utc)
         open_past = (now - timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
         start_soon = (now + timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
+        start_past = (now - timedelta(minutes=3)).isoformat().replace("+00:00", "Z")
 
         fake_client = _RouteClient(
             {
@@ -481,7 +704,7 @@ class GameApiServiceTest(unittest.IsolatedAsyncioTestCase):
                                     "live_type": 1,
                                     "name": "fes-enterable",
                                     "open_time": open_past,
-                                    "live_start_time": start_soon,
+                                    "live_start_time": start_past,
                                 },
                             ],
                             "trailer_archive_list": [],
@@ -582,6 +805,7 @@ class UpdateCommandTest(unittest.IsolatedAsyncioTestCase):
                 "source": {
                     "archive_get_home_total_count": 3,
                     "archive_get_home_with_count": 2,
+                    "archive_get_home_station_count": 1,
                     "archive_get_home_fes_count": 1,
                     "enterable_total_count": 2,
                     "enterable_with_count": 1,
@@ -609,6 +833,7 @@ class UpdateCommandTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("with_live 数据刷新完成", payload)
         self.assertIn("home 总场次: 3", payload)
         self.assertIn("home With×MEETS: 2", payload)
+        self.assertIn("home With×STATION: 1", payload)
         self.assertIn("home Fes×LIVE: 1", payload)
         self.assertIn("可进场总数: 2", payload)
         self.assertIn("详情成功: 2", payload)

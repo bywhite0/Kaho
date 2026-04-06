@@ -51,6 +51,7 @@ REQUIRED_CREDENTIAL_KEYS = (
     "device_specific_id",
     "player_id",
 )
+WITH_LIVE_TYPES = (2, 3)
 
 
 class GameApiServiceError(RuntimeError):
@@ -427,6 +428,12 @@ class GameApiService:
             return False
         return now >= open_time
 
+    def _is_live_started(self, item: Dict[str, Any], now: datetime) -> bool:
+        start_time = self._pick_first_time(item, ("live_start_time", "start_time"))
+        if start_time is None:
+            return True
+        return now >= start_time
+
     def _extract_with_live_items(self, values: Any) -> List[Dict[str, Any]]:
         result: List[Dict[str, Any]] = []
         if not isinstance(values, list):
@@ -435,7 +442,7 @@ class GameApiService:
             if not isinstance(item, dict):
                 continue
             live_type = self._resolve_live_type(item)
-            if live_type != 2:
+            if live_type not in WITH_LIVE_TYPES:
                 continue
             result.append(dict(item))
         return result
@@ -489,6 +496,7 @@ class GameApiService:
         live_id = str(result["live_id"])
         live_type = int(result["live_type"])
         errors: List[str] = result["errors"]
+        now = datetime.now(timezone.utc)
 
         if not live_id:
             errors.append("missing_live_id")
@@ -511,17 +519,33 @@ class GameApiService:
                 result["status"] = "error"
             return result
 
+        if live_type == 3:
+            result["status"] = "skipped"
+            return result
+
         if live_type == 1:
+            lobby_detail: Optional[Dict[str, Any]] = None
             try:
-                await self._post_json(
+                lobby_data = await self._post_json(
                     client,
                     "/feslive/lobby",
                     {"live_id": live_id},
                     credential,
                     session_token=session_token,
                 )
+                if isinstance(lobby_data, dict):
+                    lobby_detail = lobby_data
             except Exception as exc:
                 errors.append(f"feslive_lobby:{exc}")
+                result["status"] = "error"
+
+            if not self._is_live_started(item, now):
+                if isinstance(lobby_detail, dict):
+                    result["detail"] = lobby_detail
+                    result["detail_source"] = "feslive_lobby"
+                if result.get("status") != "error":
+                    result["status"] = "skipped"
+                return result
 
             try:
                 detail = await self._post_json(
@@ -534,6 +558,16 @@ class GameApiService:
                 result["detail"] = detail
                 result["detail_source"] = "feslive_enter"
                 result["status"] = "ok"
+            except GameApiRequestError as exc:
+                if exc.status_code == 403:
+                    if isinstance(lobby_detail, dict):
+                        result["detail"] = lobby_detail
+                        result["detail_source"] = "feslive_lobby"
+                    if result.get("status") != "error":
+                        result["status"] = "skipped"
+                else:
+                    errors.append(f"feslive_enter:{exc}")
+                    result["status"] = "error"
             except Exception as exc:
                 errors.append(f"feslive_enter:{exc}")
                 result["status"] = "error"
@@ -584,26 +618,36 @@ class GameApiService:
     ) -> Tuple[Optional[Dict[str, Any]], str, List[str]]:
         errors: List[str] = []
         archives_id = self._archive_identity(item)
+        live_type = self._resolve_live_type(item)
         if not archives_id:
-            errors.append("archive_get_with_archive_data:missing_archives_id")
+            if live_type == 3:
+                errors.append("archive_get_with_station_data:missing_archives_id")
+            else:
+                errors.append("archive_get_with_archive_data:missing_archives_id")
             return None, "", errors
+
+        detail_path = "/archive/get_with_archive_data"
+        detail_source = "archive_get_with_archive_data"
+        if live_type == 3:
+            detail_path = "/archive/get_with_station_data"
+            detail_source = "archive_get_with_station_data"
 
         try:
             detail = await self._post_json(
                 client,
-                "/archive/get_with_archive_data",
+                detail_path,
                 {"archives_id": archives_id},
                 credential,
                 session_token=session_token,
             )
         except Exception as exc:
-            errors.append(f"archive_get_with_archive_data:{exc}")
+            errors.append(f"{detail_source}:{exc}")
             return None, "", errors
 
         if not detail:
-            errors.append("archive_get_with_archive_data:empty")
+            errors.append(f"{detail_source}:empty")
             return None, "", errors
-        return detail, "archive_get_with_archive_data", errors
+        return detail, detail_source, errors
 
     async def _fetch_latest_archive_from_archive_list(
         self,
@@ -646,6 +690,44 @@ class GameApiService:
             errors.append(f"{error_key}:invalid_item")
             return None, errors
         return dict(first_item), errors
+
+    async def _fetch_with_station_list(
+        self,
+        client: httpx.AsyncClient,
+        credential: Dict[str, Any],
+        session_token: str,
+        limit: int = 20,
+        error_key: str = "archive_get_with_station_list",
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
+        errors: List[str] = []
+        payload = {
+            "order": "desc",
+            "sort": "live_start_time",
+            "limit": limit,
+            "offset": 0,
+            "characters": [],
+        }
+        try:
+            data = await self._post_json(
+                client,
+                "/archive/get_with_station_list",
+                payload,
+                credential,
+                session_token=session_token,
+            )
+        except Exception as exc:
+            errors.append(f"{error_key}:{exc}")
+            return [], errors
+
+        for key in ("archive_list", "with_station_list", "with_station_archive_list", "list"):
+            if key not in data:
+                continue
+            items = data.get(key)
+            if isinstance(items, list):
+                return self._extract_dict_items(items), errors
+            errors.append(f"{error_key}:invalid_{key}")
+            return [], errors
+        return [], errors
 
     def _cache_file_path(self) -> Path:
         return self.project_root / "cache" / "game_api" / "with_live.json"
@@ -700,8 +782,10 @@ class GameApiService:
         with_live_home_live_list: List[Dict[str, Any]] = []
         with_live_home_trailer_list: List[Dict[str, Any]] = []
         with_live_home_list: List[Dict[str, Any]] = []
+        with_station_archive_list: List[Dict[str, Any]] = []
         home_fetched = False
         latest_from_archive_list: Optional[Dict[str, Any]] = None
+        latest_from_station_list: Optional[Dict[str, Any]] = None
         latest_archive_any: Optional[Dict[str, Any]] = None
         latest_archive_any_meta: Dict[str, Any] = {
             "source": "none",
@@ -747,7 +831,8 @@ class GameApiService:
                 home_trailer_enterable_list = [
                     item
                     for item in home_trailer_list
-                    if self._is_enterable_by_open_time(item, now)
+                    if self._resolve_live_type(item) in (1, 2)
+                    and self._is_enterable_by_open_time(item, now)
                 ]
                 for trailer in home_trailer_enterable_list:
                     detail_item = await self._fetch_enter_detail(
@@ -765,7 +850,17 @@ class GameApiService:
             except Exception as exc:
                 fetch_errors.append(f"archive_get_home:{exc}")
 
-            latest_candidates = with_live_home_live_list
+            station_list_items, station_list_errors = await self._fetch_with_station_list(
+                client,
+                credential,
+                session_token,
+                limit=20,
+            )
+            with_station_archive_list = station_list_items
+            fetch_errors.extend(station_list_errors)
+            latest_from_station_list = self._pick_latest_archive_item(with_station_archive_list)
+
+            latest_candidates = [*with_live_home_live_list, *with_station_archive_list]
 
             latest_from_archive_list, archive_list_errors = (
                 await self._fetch_latest_archive_from_archive_list(
@@ -794,11 +889,14 @@ class GameApiService:
                     "errors": latest_archive_any_errors,
                 }
 
-            latest_item = (
-                dict(latest_from_archive_list)
-                if isinstance(latest_from_archive_list, dict)
-                else self._pick_latest_archive_item(latest_candidates)
-            )
+            latest_pick_candidates: List[Dict[str, Any]] = []
+            if isinstance(latest_from_archive_list, dict):
+                latest_pick_candidates.append(dict(latest_from_archive_list))
+            if isinstance(latest_from_station_list, dict):
+                latest_pick_candidates.append(dict(latest_from_station_list))
+            if not latest_pick_candidates:
+                latest_pick_candidates = latest_candidates
+            latest_item = self._pick_latest_archive_item(latest_pick_candidates)
             if latest_archive_any is None and isinstance(latest_item, dict):
                 latest_archive_any = dict(latest_item)
                 latest_archive_any_meta = {
@@ -831,6 +929,9 @@ class GameApiService:
 
         home_with_count = sum(
             1 for item in home_trailer_list if self._resolve_live_type(item) == 2
+        )
+        home_station_count = sum(
+            1 for item in home_trailer_list if self._resolve_live_type(item) == 3
         )
         home_fes_count = sum(
             1 for item in home_trailer_list if self._resolve_live_type(item) == 1
@@ -865,6 +966,7 @@ class GameApiService:
                 "archive_get_home_trailer_count": len(with_live_home_trailer_list),
                 "archive_get_home_total_count": len(home_trailer_list),
                 "archive_get_home_with_count": home_with_count,
+                "archive_get_home_station_count": home_station_count,
                 "archive_get_home_fes_count": home_fes_count,
                 "enterable_total_count": len(home_trailer_enterable_list),
                 "enterable_with_count": enterable_with_count,
@@ -872,6 +974,7 @@ class GameApiService:
                 "enter_detail_success_count": enter_detail_success_count,
                 "enter_detail_failed_count": enter_detail_failed_count,
                 "home_fetched": home_fetched,
+                "with_station_archive_count": len(with_station_archive_list),
             },
             "home_trailer_live_list": home_trailer_live_list,
             "home_trailer_trailer_list": home_trailer_trailer_list,
@@ -881,6 +984,7 @@ class GameApiService:
             "with_live_archive_live_home": with_live_home_live_list,
             "with_live_archive_trailer_home": with_live_home_trailer_list,
             "with_live_archive_home": with_live_home_list,
+            "with_station_archive_list": with_station_archive_list,
             "latest_archive": latest_item,
             "latest_archive_detail": latest_detail,
             "latest_archive_detail_meta": latest_detail_meta,

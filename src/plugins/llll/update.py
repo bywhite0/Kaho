@@ -43,6 +43,7 @@ async def _(args: Message = CommandArg()):
         or source.get("archive_get_home_live_count")
         or 0
     )
+    home_station = int(source.get("archive_get_home_station_count") or 0)
     home_fes = int(source.get("archive_get_home_fes_count") or 0)
     enterable_total = int(source.get("enterable_total_count") or 0)
     enterable_with = int(source.get("enterable_with_count") or 0)
@@ -64,6 +65,7 @@ async def _(args: Message = CommandArg()):
         "with_live 数据刷新完成\n"
         f"home 总场次: {home_total}\n"
         f"home With×MEETS: {home_with}\n"
+        f"home With×STATION: {home_station}\n"
         f"home Fes×LIVE: {home_fes}\n"
         f"可进场总数: {enterable_total}\n"
         f"可进场 With×MEETS: {enterable_with}\n"
