@@ -11,9 +11,7 @@ nonebot.init()
 driver = nonebot.get_driver()
 # driver.register_adapter(ConsoleAdapter)
 driver.register_adapter(ONEBOT_V11Adapter)
-plugin_dir = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "src", "plugins", "llll")
-)
+plugin_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "src", "plugins"))
 nonebot.load_plugins(plugin_dir)
 
 
