@@ -9,7 +9,7 @@ from src.core.services.bgp_icon_image import generate_bgp_icon_image
 
 
 bgp_icon_cmd = on_command("bgp_icon")
-HELP_TEXT = "请在同一条消息附带 1:1 图片，例如：/bgp_icon [图片]"
+HELP_TEXT = "请在同一条消息附带图片，例如：/bgp_icon [图片]"
 
 
 @bgp_icon_cmd.handle()

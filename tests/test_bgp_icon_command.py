@@ -66,7 +66,7 @@ class BgpIconCommandTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(_FinishCalled) as ctx:
                 await bgp_icon_module._(bot, args)
 
-        self.assertIn("同一条消息附带", str(ctx.exception.payload))
+        self.assertIn("附带图片", str(ctx.exception.payload))
 
     async def test_bgp_icon_process_failed(self):
         import src.plugins.bgp_icon.command as bgp_icon_module
