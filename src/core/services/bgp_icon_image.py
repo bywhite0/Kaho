@@ -40,9 +40,16 @@ class BgpIconImageService:
         width, height = image.size
         if width <= 0 or height <= 0:
             raise ValueError("图片尺寸无效")
-        if width != height:
-            raise ValueError("仅支持 1:1 比例图片")
-        return image
+        if width == height:
+            return image
+        return self._center_crop_to_square(image)
+
+    def _center_crop_to_square(self, image: Image.Image) -> Image.Image:
+        width, height = image.size
+        target = min(width, height)
+        left = (width - target) // 2
+        top = (height - target) // 2
+        return image.crop((left, top, left + target, top + target))
 
     def _load_frame_image(self) -> Image.Image:
         if not self.frame_path.exists() or not self.frame_path.is_file():

@@ -20,6 +20,32 @@ class BgpIconImageServiceTest(unittest.TestCase):
         Image.new("RGBA", (width, height), color).save(buffer, format="PNG")
         return buffer.getvalue()
 
+    def _build_vertical_stripes_png_bytes(
+        self, width: int, height: int, left: tuple, middle: tuple, right: tuple
+    ) -> bytes:
+        image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        one_third = width // 3
+        draw.rectangle((0, 0, one_third - 1, height - 1), fill=left)
+        draw.rectangle((one_third, 0, one_third * 2 - 1, height - 1), fill=middle)
+        draw.rectangle((one_third * 2, 0, width - 1, height - 1), fill=right)
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def _build_horizontal_stripes_png_bytes(
+        self, width: int, height: int, top: tuple, middle: tuple, bottom: tuple
+    ) -> bytes:
+        image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        one_third = height // 3
+        draw.rectangle((0, 0, width - 1, one_third - 1), fill=top)
+        draw.rectangle((0, one_third, width - 1, one_third * 2 - 1), fill=middle)
+        draw.rectangle((0, one_third * 2, width - 1, height - 1), fill=bottom)
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
     def _write_frame(self, size: int):
         frame = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(frame)
@@ -55,14 +81,43 @@ class BgpIconImageServiceTest(unittest.TestCase):
         with Image.open(BytesIO(output)) as result:
             self.assertEqual(result.size, (800, 800))
 
-    def test_non_square_image_raises(self):
+    def test_non_square_wide_image_center_crops_successfully(self):
         self._write_frame(800)
         service = BgpIconImageService(project_root=self.root)
+        source = self._build_vertical_stripes_png_bytes(
+            600,
+            400,
+            (255, 0, 0, 255),
+            (0, 255, 0, 255),
+            (0, 0, 255, 255),
+        )
 
-        with self.assertRaises(ValueError) as ctx:
-            service.generate(self._build_png_bytes(800, 600, (255, 0, 0, 255)))
+        output = service.generate(source)
 
-        self.assertIn("1:1", str(ctx.exception))
+        with Image.open(BytesIO(output)) as result:
+            self.assertEqual(result.size, (400, 400))
+            self.assertEqual(result.getpixel((60, 200)), (255, 0, 0, 255))
+            self.assertEqual(result.getpixel((200, 200)), (0, 255, 0, 255))
+            self.assertEqual(result.getpixel((340, 200)), (0, 0, 255, 255))
+
+    def test_non_square_tall_image_center_crops_successfully(self):
+        self._write_frame(800)
+        service = BgpIconImageService(project_root=self.root)
+        source = self._build_horizontal_stripes_png_bytes(
+            400,
+            600,
+            (255, 0, 0, 255),
+            (0, 255, 0, 255),
+            (0, 0, 255, 255),
+        )
+
+        output = service.generate(source)
+
+        with Image.open(BytesIO(output)) as result:
+            self.assertEqual(result.size, (400, 400))
+            self.assertEqual(result.getpixel((200, 60)), (255, 0, 0, 255))
+            self.assertEqual(result.getpixel((200, 200)), (0, 255, 0, 255))
+            self.assertEqual(result.getpixel((200, 340)), (0, 0, 255, 255))
 
     def test_missing_frame_raises(self):
         service = BgpIconImageService(project_root=self.root)
