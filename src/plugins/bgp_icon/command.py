@@ -9,11 +9,16 @@ from src.core.services.bgp_icon_image import generate_bgp_icon_image
 
 
 bgp_icon_cmd = on_command("bgp_icon")
-HELP_TEXT = "请在同一条消息附带图片，例如：/bgp_icon [图片]"
+HELP_TEXT = "用法: /bgp_icon [frame] [图片]，默认 frame 为 bgp"
 
 
 @bgp_icon_cmd.handle()
 async def _(bot: Bot, args: Message = CommandArg()):
+    frame_name = _extract_frame_name(args)
+    if frame_name is None:
+        await bgp_icon_cmd.finish(f"参数错误，请检查参数格式。\n{HELP_TEXT}")
+        return
+
     image_url = await _extract_first_image_url(bot, args)
     if not image_url:
         await bgp_icon_cmd.finish(HELP_TEXT)
@@ -26,12 +31,22 @@ async def _(bot: Bot, args: Message = CommandArg()):
         return
 
     try:
-        result_bytes = generate_bgp_icon_image(source_bytes)
+        result_bytes = generate_bgp_icon_image(source_bytes, frame_name=frame_name)
     except Exception as exc:
         await bgp_icon_cmd.finish(f"生成头像框图片失败: {exc}")
         return
 
     await bgp_icon_cmd.finish(MessageSegment.image(result_bytes))
+
+
+def _extract_frame_name(args: Message) -> Optional[str]:
+    text = args.extract_plain_text().strip()
+    if not text:
+        return "bgp"
+    parts = text.split()
+    if len(parts) > 1:
+        return None
+    return parts[0]
 
 
 async def _extract_first_image_url(bot: Bot, args: Message) -> str:

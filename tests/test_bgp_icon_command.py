@@ -45,7 +45,9 @@ class BgpIconCommandTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(bgp_icon_module, "bgp_icon_cmd", matcher), patch.object(
             bgp_icon_module, "_download_image_bytes", fake_download
         ), patch.object(
-            bgp_icon_module, "generate_bgp_icon_image", lambda _: b"result-bytes"
+            bgp_icon_module,
+            "generate_bgp_icon_image",
+            lambda _, frame_name="bgp": b"result-bytes",
         ):
             with self.assertRaises(_FinishCalled) as ctx:
                 await bgp_icon_module._(bot, args)
@@ -54,6 +56,40 @@ class BgpIconCommandTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.payload.type, "image")
         fake_download.assert_awaited_once_with("https://example.com/image.png")
         bot.call_api.assert_not_awaited()
+
+    async def test_bgp_icon_success_with_specified_frame(self):
+        import src.plugins.bgp_icon.command as bgp_icon_module
+
+        matcher = _DummyMatcher()
+        bot = _DummyBot()
+        args = Message(
+            [
+                MessageSegment("text", {"text": "kaho"}),
+                MessageSegment("image", {"url": "https://example.com/image.png", "file": "a"}),
+            ]
+        )
+
+        fake_download = AsyncMock(return_value=b"source-bytes")
+        captured_calls = []
+
+        def _fake_generate(source_bytes, frame_name="bgp"):
+            captured_calls.append((source_bytes, frame_name))
+            return b"result-bytes"
+
+        with patch.object(bgp_icon_module, "bgp_icon_cmd", matcher), patch.object(
+            bgp_icon_module, "_download_image_bytes", fake_download
+        ), patch.object(
+            bgp_icon_module,
+            "generate_bgp_icon_image",
+            _fake_generate,
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await bgp_icon_module._(bot, args)
+
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+        fake_download.assert_awaited_once_with("https://example.com/image.png")
+        self.assertEqual(captured_calls, [(b"source-bytes", "kaho")])
 
     async def test_bgp_icon_without_image(self):
         import src.plugins.bgp_icon.command as bgp_icon_module
@@ -66,7 +102,22 @@ class BgpIconCommandTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(_FinishCalled) as ctx:
                 await bgp_icon_module._(bot, args)
 
-        self.assertIn("附带图片", str(ctx.exception.payload))
+        self.assertIn("/bgp_icon [frame]", str(ctx.exception.payload))
+
+    async def test_bgp_icon_invalid_too_many_frame_args(self):
+        import src.plugins.bgp_icon.command as bgp_icon_module
+
+        matcher = _DummyMatcher()
+        bot = _DummyBot()
+        args = Message("kaho extra")
+
+        with patch.object(bgp_icon_module, "bgp_icon_cmd", matcher):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await bgp_icon_module._(bot, args)
+
+        payload = str(ctx.exception.payload)
+        self.assertIn("参数错误", payload)
+        self.assertIn("/bgp_icon [frame]", payload)
 
     async def test_bgp_icon_process_failed(self):
         import src.plugins.bgp_icon.command as bgp_icon_module
@@ -106,7 +157,9 @@ class BgpIconCommandTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(bgp_icon_module, "bgp_icon_cmd", matcher), patch.object(
             bgp_icon_module, "_download_image_bytes", fake_download
         ), patch.object(
-            bgp_icon_module, "generate_bgp_icon_image", lambda _: b"result-bytes"
+            bgp_icon_module,
+            "generate_bgp_icon_image",
+            lambda _, frame_name="bgp": b"result-bytes",
         ):
             with self.assertRaises(_FinishCalled):
                 await bgp_icon_module._(bot, args)
@@ -125,7 +178,9 @@ class BgpIconCommandTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(bgp_icon_module, "bgp_icon_cmd", matcher), patch.object(
             bgp_icon_module, "_download_image_bytes", fake_download
         ), patch.object(
-            bgp_icon_module, "generate_bgp_icon_image", lambda _: b"result-bytes"
+            bgp_icon_module,
+            "generate_bgp_icon_image",
+            lambda _, frame_name="bgp": b"result-bytes",
         ):
             with self.assertRaises(_FinishCalled) as ctx:
                 await bgp_icon_module._(bot, args)
