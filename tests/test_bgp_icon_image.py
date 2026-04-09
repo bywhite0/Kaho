@@ -51,7 +51,11 @@ class BgpIconImageServiceTest(unittest.TestCase):
         draw = ImageDraw.Draw(frame)
         border = max(2, size // 20)
         draw.rectangle((0, 0, size - 1, size - 1), outline=(255, 255, 255, 255), width=border)
-        frame.save(self.root / "assets" / "bgp_icon" / "frame.png")
+        frame.save(self.root / "assets" / "bgp_icon" / "bgp.png")
+
+    def _write_solid_frame(self, name: str, size: int, color: tuple):
+        frame = Image.new("RGBA", (size, size), color)
+        frame.save(self.root / "assets" / "bgp_icon" / f"{name}.png")
 
     def test_large_image_scaled_to_frame_size(self):
         self._write_frame(800)
@@ -134,6 +138,57 @@ class BgpIconImageServiceTest(unittest.TestCase):
         output = service.generate(self._build_png_bytes(800, 800, (255, 0, 0, 255)))
 
         self.assertTrue(output.startswith(b"\x89PNG\r\n\x1a\n"))
+
+    def test_default_frame_name_uses_bgp_png(self):
+        self._write_solid_frame("bgp", 800, (0, 255, 0, 255))
+        self._write_solid_frame("kaho", 800, (0, 0, 255, 255))
+        service = BgpIconImageService(project_root=self.root)
+
+        output = service.generate(self._build_png_bytes(800, 800, (255, 0, 0, 255)))
+
+        with Image.open(BytesIO(output)) as result:
+            self.assertEqual(result.getpixel((400, 400)), (0, 255, 0, 255))
+
+    def test_specified_frame_name_uses_target_png(self):
+        self._write_solid_frame("bgp", 800, (0, 255, 0, 255))
+        self._write_solid_frame("kaho", 800, (0, 0, 255, 255))
+        service = BgpIconImageService(project_root=self.root)
+
+        output = service.generate(
+            self._build_png_bytes(800, 800, (255, 0, 0, 255)),
+            frame_name="kaho",
+        )
+
+        with Image.open(BytesIO(output)) as result:
+            self.assertEqual(result.getpixel((400, 400)), (0, 0, 255, 255))
+
+    def test_missing_frame_name_raises_with_available_list(self):
+        self._write_solid_frame("bgp", 800, (0, 255, 0, 255))
+        self._write_solid_frame("kaho", 800, (0, 0, 255, 255))
+        service = BgpIconImageService(project_root=self.root)
+
+        with self.assertRaises(RuntimeError) as ctx:
+            service.generate(
+                self._build_png_bytes(800, 800, (255, 0, 0, 255)),
+                frame_name="unknown",
+            )
+
+        message = str(ctx.exception)
+        self.assertIn("可选", message)
+        self.assertIn("bgp", message)
+        self.assertIn("kaho", message)
+
+    def test_invalid_frame_name_raises(self):
+        self._write_solid_frame("bgp", 800, (0, 255, 0, 255))
+        service = BgpIconImageService(project_root=self.root)
+
+        with self.assertRaises(ValueError) as ctx:
+            service.generate(
+                self._build_png_bytes(800, 800, (255, 0, 0, 255)),
+                frame_name="../kaho",
+            )
+
+        self.assertIn("frame 参数", str(ctx.exception))
 
 
 if __name__ == "__main__":
