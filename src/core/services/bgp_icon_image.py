@@ -1,9 +1,18 @@
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 import re
 from typing import List, Optional, Tuple
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageSequence
+
+
+@dataclass
+class _SourceImagePayload:
+    frames: List[Image.Image]
+    durations: List[int]
+    loop: int
+    output_format: str
 
 
 class BgpIconImageService:
@@ -18,26 +27,65 @@ class BgpIconImageService:
         self.frame_dir = self.project_root / "assets" / "bgp_icon"
 
     def generate(self, source_bytes: bytes, frame_name: str = "bgp") -> bytes:
-        source_image = self._load_source_image(source_bytes)
+        source_payload = self._load_source_image(source_bytes)
         frame_image = self._load_frame_image(frame_name=frame_name)
-        source_image, frame_image = self._align_resolution(source_image, frame_image)
-        circle_image = self._build_circle_image(source_image)
+        output_frames: List[Image.Image] = []
 
-        merged = Image.alpha_composite(circle_image, frame_image)
-        output = BytesIO()
-        merged.save(output, format="PNG")
-        return output.getvalue()
+        for source_image in source_payload.frames:
+            aligned_source, aligned_frame = self._align_resolution(source_image, frame_image)
+            circle_image = self._build_circle_image(aligned_source)
+            merged = Image.alpha_composite(circle_image, aligned_frame)
+            output_frames.append(merged)
 
-    def _load_source_image(self, source_bytes: bytes) -> Image.Image:
+        if source_payload.output_format == "GIF":
+            return self._save_transparent_gif(
+                frames=output_frames,
+                durations=source_payload.durations,
+                loop=source_payload.loop,
+            )
+        return self._save_png(output_frames[0])
+
+    def _load_source_image(self, source_bytes: bytes) -> _SourceImagePayload:
         if not source_bytes:
             raise ValueError("图片内容为空")
 
         try:
             with Image.open(BytesIO(source_bytes)) as loaded:
+                image_format = str(loaded.format or "").upper()
+                loop = int(loaded.info.get("loop") or 0)
+                default_duration = int(loaded.info.get("duration") or 100)
+                is_gif = image_format == "GIF"
+                is_animated = bool(getattr(loaded, "is_animated", False))
+
+                if is_gif and is_animated:
+                    frames: List[Image.Image] = []
+                    durations: List[int] = []
+                    for frame in ImageSequence.Iterator(loaded):
+                        rgba = frame.convert("RGBA")
+                        frames.append(self._normalize_source_frame(rgba))
+                        durations.append(int(frame.info.get("duration") or default_duration))
+
+                    if not frames:
+                        raise ValueError("GIF 图片帧为空")
+                    return _SourceImagePayload(
+                        frames=frames,
+                        durations=durations,
+                        loop=loop,
+                        output_format="GIF",
+                    )
+
                 image = loaded.convert("RGBA")
         except Exception as exc:
             raise ValueError(f"无法解析图片: {exc}") from exc
 
+        return _SourceImagePayload(
+            frames=[self._normalize_source_frame(image)],
+            durations=[100],
+            loop=0,
+            output_format="GIF" if image_format == "GIF" else "PNG",
+        )
+
+    def _normalize_source_frame(self, image: Image.Image) -> Image.Image:
         width, height = image.size
         if width <= 0 or height <= 0:
             raise ValueError("图片尺寸无效")
@@ -120,6 +168,54 @@ class BgpIconImageService:
         source_alpha = result.getchannel("A")
         result.putalpha(ImageChops.multiply(source_alpha, mask))
         return result
+
+    def _save_png(self, image: Image.Image) -> bytes:
+        output = BytesIO()
+        image.save(output, format="PNG")
+        return output.getvalue()
+
+    def _save_transparent_gif(
+        self,
+        frames: List[Image.Image],
+        durations: List[int],
+        loop: int,
+    ) -> bytes:
+        if not frames:
+            raise RuntimeError("GIF 输出帧为空")
+
+        paletted_frames = [self._rgba_to_transparent_gif_frame(frame) for frame in frames]
+        output = BytesIO()
+        first, *rest = paletted_frames
+        first.save(
+            output,
+            format="GIF",
+            save_all=True,
+            append_images=rest,
+            duration=durations if len(durations) == len(paletted_frames) else durations[0],
+            loop=loop,
+            transparency=255,
+            disposal=2,
+        )
+        return output.getvalue()
+
+    def _rgba_to_transparent_gif_frame(self, image: Image.Image) -> Image.Image:
+        rgba = image.convert("RGBA")
+        alpha = rgba.getchannel("A")
+        rgb = Image.new("RGB", rgba.size, (0, 0, 0))
+        rgb.paste(rgba.convert("RGB"), mask=alpha)
+        paletted = rgb.quantize(colors=255)
+        transparent_index = 255
+        transparent_mask = Image.eval(alpha, lambda a: 255 if a <= 127 else 0)
+        paletted.paste(transparent_index, mask=transparent_mask)
+        palette = paletted.getpalette()
+        if palette:
+            if len(palette) < 768:
+                palette.extend([0] * (768 - len(palette)))
+            palette[transparent_index * 3 : transparent_index * 3 + 3] = [0, 0, 0]
+            paletted.putpalette(palette)
+        paletted.info["transparency"] = transparent_index
+        paletted.info["disposal"] = 2
+        return paletted
 
 
 _service: Optional[BgpIconImageService] = None

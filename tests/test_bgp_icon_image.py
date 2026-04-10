@@ -20,6 +20,41 @@ class BgpIconImageServiceTest(unittest.TestCase):
         Image.new("RGBA", (width, height), color).save(buffer, format="PNG")
         return buffer.getvalue()
 
+    def _build_transparent_gif_bytes(
+        self,
+        width: int,
+        height: int,
+        frame_count: int = 1,
+    ) -> bytes:
+        frames = []
+        durations = []
+        for index in range(frame_count):
+            frame = Image.new("P", (width, height), 0)
+            palette = [0, 0, 0, 255, 0, 0, 0, 0, 255] + [0] * (768 - 9)
+            frame.putpalette(palette)
+            draw = ImageDraw.Draw(frame)
+            offset = 10 + index * 5
+            draw.rectangle(
+                (offset, 10, width - 10, height - 10),
+                fill=1 if index % 2 == 0 else 2,
+            )
+            frame.info["transparency"] = 0
+            frames.append(frame)
+            durations.append(70 + index * 60)
+
+        buffer = BytesIO()
+        frames[0].save(
+            buffer,
+            format="GIF",
+            save_all=True,
+            append_images=frames[1:],
+            duration=durations,
+            loop=1,
+            transparency=0,
+            disposal=2,
+        )
+        return buffer.getvalue()
+
     def _build_vertical_stripes_png_bytes(
         self, width: int, height: int, left: tuple, middle: tuple, right: tuple
     ) -> bytes:
@@ -189,6 +224,35 @@ class BgpIconImageServiceTest(unittest.TestCase):
             )
 
         self.assertIn("frame 参数", str(ctx.exception))
+
+    def test_transparent_gif_input_outputs_transparent_gif(self):
+        self._write_solid_frame("bgp", 800, (0, 0, 0, 0))
+        service = BgpIconImageService(project_root=self.root)
+        source = self._build_transparent_gif_bytes(400, 400, frame_count=1)
+
+        output = service.generate(source)
+
+        self.assertTrue(output.startswith(b"GIF87a") or output.startswith(b"GIF89a"))
+        with Image.open(BytesIO(output)) as result:
+            self.assertEqual(result.format, "GIF")
+            self.assertIn("transparency", result.info)
+            rgba = result.convert("RGBA")
+            self.assertEqual(rgba.getpixel((0, 0))[3], 0)
+            self.assertGreater(rgba.getpixel((200, 200))[3], 0)
+
+    def test_animated_gif_input_outputs_animated_gif(self):
+        self._write_solid_frame("bgp", 800, (0, 0, 0, 0))
+        service = BgpIconImageService(project_root=self.root)
+        source = self._build_transparent_gif_bytes(360, 360, frame_count=2)
+
+        output = service.generate(source)
+
+        self.assertTrue(output.startswith(b"GIF87a") or output.startswith(b"GIF89a"))
+        with Image.open(BytesIO(output)) as result:
+            self.assertEqual(result.format, "GIF")
+            self.assertTrue(getattr(result, "is_animated", False))
+            self.assertEqual(getattr(result, "n_frames", 1), 2)
+            self.assertEqual(int(result.info.get("loop") or 0), 1)
 
 
 if __name__ == "__main__":
