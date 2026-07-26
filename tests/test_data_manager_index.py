@@ -33,6 +33,20 @@ class DataManagerIndexTest(unittest.TestCase):
         if latin_last:
             self.assertEqual(self.dm.get_character_id_by_name(latin_last), char_id)
 
+    def test_get_member_profiles(self):
+        char_id = self.meta.get("profile_char_id")
+        if not char_id:
+            self.skipTest("fixture 中所选角色无 MemberProfiles 数据")
+        profiles = self.dm.get_member_profiles(char_id)
+        self.assertGreaterEqual(len(profiles), 1)
+        first = profiles[0]
+        self.assertIn("generation", first)
+        self.assertIn("introduction", first)
+        # 立绘资源 id 与 profile id 一致，用于按时间点取立绘
+        self.assertEqual(first["stand_image_id"], first["profile_id"])
+        # 未知角色返回空列表
+        self.assertEqual(self.dm.get_member_profiles(-1), [])
+
     def test_get_card_series_data_uses_index(self):
         series_id = self.meta["first_series_id"]
         cards = self.dm.get_card_series_data(series_id)

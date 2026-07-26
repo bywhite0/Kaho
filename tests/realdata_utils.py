@@ -102,6 +102,17 @@ def build_index_fixture(data_dir: Path):
         raise unittest.SkipTest("真实 Characters 数据不足")
 
     char_ids = {c["Id"] for c in selected_chars}
+
+    def _profile_char_id(profile):
+        try:
+            return int(profile.get("CharactersId"))
+        except (TypeError, ValueError):
+            return None
+
+    selected_profiles = [
+        p for p in load_real_yaml("MemberProfiles.yaml") if _profile_char_id(p) in char_ids
+    ]
+
     series_selected = {}
     for card in cards:
         if card.get("CharactersId") not in char_ids:
@@ -174,6 +185,7 @@ def build_index_fixture(data_dir: Path):
     _write_yaml(data_dir / "Musics.yaml", music_candidates)
     _write_yaml(data_dir / "Comics.yaml", comic_candidates)
     _write_yaml(data_dir / "CardSeries.yaml", card_series)
+    _write_yaml(data_dir / "MemberProfiles.yaml", selected_profiles)
 
     first_char = selected_chars[0]
     first_music = music_candidates[0]
@@ -198,6 +210,10 @@ def build_index_fixture(data_dir: Path):
         "first_char_name": (first_char.get("NameLast") or "")
         + (first_char.get("NameFirst") or ""),
         "first_char_latin_last": first_char.get("LatinAlphabetNameLast"),
+        "profile_char_id": next(
+            (c["Id"] for c in selected_chars if any(_profile_char_id(p) == c["Id"] for p in selected_profiles)),
+            None,
+        ),
         "first_series_id": first_card.get("CardSeriesId"),
         "first_music_id": first_music.get("Id"),
         "first_music_title": first_music.get("Title"),

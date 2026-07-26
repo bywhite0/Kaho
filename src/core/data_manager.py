@@ -81,6 +81,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         self.card_rarities = {}
         self.characters = {}
         self.character_alias_map = {}
+        self.member_profiles = {}
         self.skill_series = {}
         self.skills = {}
         self.items = {}
@@ -154,6 +155,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
     def _ensure_all(self):
         self._ensure(
             "characters",
+            "member_profiles",
             "card_rarities",
             "card_datas",
             "card_series_meta",
@@ -202,6 +204,8 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
                 continue
             if group == "characters":
                 self._load_characters()
+            elif group == "member_profiles":
+                self._load_member_profiles()
             elif group == "card_rarities":
                 self._load_card_rarities()
             elif group == "card_datas":
@@ -305,6 +309,25 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
                 if key and key not in self.character_alias_map:
                     self.character_alias_map[key] = char_id
             self.character_alias_map[str(char_id)] = char_id
+
+    def _load_member_profiles(self):
+        # 成员不同时间点（学年/毕业）的简介与立绘，按角色分组、按 OrderId 排序
+        self.member_profiles = {}
+        for p in self.load_yaml_file("MemberProfiles.yaml") or []:
+            try:
+                char_id = int(p.get("CharactersId"))
+            except (TypeError, ValueError):
+                continue
+            self.member_profiles.setdefault(char_id, []).append(p)
+
+        def _order(entry):
+            try:
+                return int(entry.get("OrderId"))
+            except (TypeError, ValueError):
+                return 0
+
+        for entries in self.member_profiles.values():
+            entries.sort(key=_order)
 
     def _load_card_rarities(self):
         self.card_rarities = {
@@ -724,6 +747,25 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         if len(color) not in (4, 7):
             return None
         return color
+
+    def get_member_profiles(self, char_id):
+        # 返回角色各时间点（学年/毕业）的简介与立绘资源，按展示顺序排列
+        self._ensure("member_profiles")
+        results = []
+        for p in self.member_profiles.get(char_id, []):
+            profile_id = p.get("Id")
+            results.append(
+                {
+                    "profile_id": profile_id,
+                    "generation": p.get("DisplayGeneration") or "",
+                    "introduction": (p.get("Introduction") or "").strip(),
+                    "graduate_introduction": (p.get("GraduateIntroduction") or "").strip(),
+                    "stand_image_id": profile_id,
+                    "background_image_id": p.get("BackgroundImageId"),
+                    "movie_id": p.get("MovieID"),
+                }
+            )
+        return results
 
     def get_generation_str(self, char_id):
         self._ensure("characters")
