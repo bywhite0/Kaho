@@ -213,6 +213,11 @@ async def _(args: Message = CommandArg()):
     state_0_card = next((c for c in all_cards if c["Id"] % 10 == 0), None)
     state_1_card = next((c for c in all_cards if c["Id"] % 10 == 1), None)
 
+    # 音击联动卡 state0/1/2 卡面哈希相同，只展示 state0，避免重复“特训后”
+    limited_type_id = series_meta.get("LimitedType")
+    if limited_type_id == 202 and state_0_card is not None:
+        state_1_card = None
+
     if state_0_card:
         state_0_full, deck_frame_chara, imgs = build_state_images(
             dm, state_0_card["Id"], series_id
