@@ -20,6 +20,22 @@
     </ul>
 </div>
 
+{% if member_profiles %}
+<div class="section">
+    <div class="section-title">年度简介</div>
+    {% for p in member_profiles %}
+    <div style="margin-bottom: 12px;">
+        {% if p.generation %}<p><strong>{{ p.generation }}</strong></p>{% endif %}
+        {% if p.introduction %}<p style="white-space: pre-wrap;">{{ p.introduction }}</p>{% endif %}
+        {% if p.graduate_introduction %}
+        <p><strong>毕业:</strong></p>
+        <p style="white-space: pre-wrap;">{{ p.graduate_introduction }}</p>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
 {% if gifts %}
 <div class="section">
     <div class="section-title">喜好礼物</div>

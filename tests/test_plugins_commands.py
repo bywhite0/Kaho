@@ -157,8 +157,34 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
                 await chara_module._(_DummyMessage(query))
 
         self.assertEqual(fake_t2i.template_name, "chara.html")
+        self.assertIn("member_profiles", fake_t2i.payload)
+        self.assertIsInstance(fake_t2i.payload["member_profiles"], list)
         self.assertIsInstance(ctx.exception.payload, MessageSegment)
         self.assertEqual(ctx.exception.payload.type, "image")
+
+    async def test_chara_member_profiles_payload(self):
+        # 有 MemberProfiles 的角色应带上 generation / introduction
+        import src.plugins.llll.chara as chara_module
+
+        profile_char_id = self.meta.get("profile_char_id")
+        if not profile_char_id:
+            self.skipTest("fixture 中所选角色无 MemberProfiles 数据")
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        matcher = _DummyMatcher()
+        with patch.object(chara_module, "chara_cmd", matcher), patch.object(
+            chara_module, "get_dm_instance", fake_get_dm
+        ), patch.object(chara_module, "get_t2i_service", lambda: fake_t2i):
+            with self.assertRaises(_FinishCalled):
+                await chara_module._(_DummyMessage(str(profile_char_id)))
+
+        profiles = fake_t2i.payload["member_profiles"]
+        self.assertGreaterEqual(len(profiles), 1)
+        self.assertIn("generation", profiles[0])
+        self.assertIn("introduction", profiles[0])
 
     async def test_music_success_generate_image(self):
         import src.plugins.llll.music as music_module

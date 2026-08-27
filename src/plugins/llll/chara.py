@@ -27,6 +27,8 @@ async def _(args: Message = CommandArg()):
         "unit": dm.get_character_unit(cid),
         "cv": char.get("CharacterVoice"),
         "profile": {},
+        # 各学年/毕业时间点简介（MemberProfiles）
+        "member_profiles": dm.get_member_profiles(cid),
         "gifts": [],
         "costumes": {},
     }
