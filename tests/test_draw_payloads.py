@@ -276,7 +276,7 @@ class BuildCharaRenderPayloadTest(unittest.TestCase):
             changed["values"],
             [
                 {"value": "特技と言えるようなことは何も…", "generation": "104期"},
-                {"value": "ひとの長所を見つけること！", "generation": "105期"},
+                {"value": "ひとの長所を見つけること！", "generation": "105期〜"},
             ],
         )
 
@@ -300,7 +300,7 @@ class BuildCharaRenderPayloadTest(unittest.TestCase):
         )
         items = {i["label"]: i for i in build_chara_render_payload(dm, 1)["data"]["profile"]}
 
-        # 新增项延续到最后 → 「104期〜」；最后一期才新增 → 单期原样
+        # 新增项延续到最后 → 一律开放区间「起〜」，即使新增于最后一期
         self.assertEqual(items["兴趣"]["value"], "釣り、配信")
         self.assertEqual(
             items["兴趣"]["segments"],
@@ -314,7 +314,7 @@ class BuildCharaRenderPayloadTest(unittest.TestCase):
             items["特长"]["segments"],
             [
                 {"text": "絵"},
-                {"text": "作詞", "generation": "卒業後"},
+                {"text": "作詞", "generation": "卒業後〜"},
             ],
         )
 
@@ -343,7 +343,7 @@ class BuildCharaRenderPayloadTest(unittest.TestCase):
             changed["values"],
             [
                 {"value": "クラシックバレエ", "generation": "103〜104期"},
-                {"value": "バレエ", "generation": "卒業後"},
+                {"value": "バレエ", "generation": "卒業後〜"},
             ],
         )
 

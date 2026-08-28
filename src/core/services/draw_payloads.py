@@ -76,11 +76,15 @@ def _collect_profile_eras(dm, char_id) -> list:
 
 
 def _era_range_label(start: str, end: str, final_era: str) -> str:
-    """取值适用区间的 badge 文本：单期原样，延续到最后用「起〜」，其余用区间。"""
-    if start == end:
-        return start
+    """取值适用区间的 badge 文本。
+
+    延续到最后一期的是开放区间，一律「起〜」（即使起点就是最后一期），
+    避免被误读成仅该期适用；中途结束的封闭段用单期或区间。
+    """
     if end == final_era:
         return f"{start}〜"
+    if start == end:
+        return start
     m_start = re.match(r"^(\d+)期$", start)
     m_end = re.match(r"^\d+期$", end)
     if m_start and m_end:
