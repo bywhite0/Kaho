@@ -248,6 +248,105 @@ class BuildCharaRenderPayloadTest(unittest.TestCase):
             [{"label": "生日", "value": "6月15日"}],
         )
 
+    def test_profile_history_with_generation_badges(self):
+        # 档案随年度变化时输出取值历史，generation 标注取值开始适用的期数
+        def entry(pid, gen, intro):
+            return {
+                "profile_id": pid,
+                "generation": gen,
+                "introduction": intro,
+                "graduate_introduction": "",
+                "stand_image_id": pid,
+            }
+
+        dm = _FakeCharaDM(
+            member_profiles=[
+                entry(1, "104期", "誕生日　11月2日\n特技　　特技と言えるようなことは何も…"),
+                entry(2, "105期", "誕生日　11月2日\n特技　　ひとの長所を見つけること！"),
+            ]
+        )
+        items = {i["label"]: i for i in build_chara_render_payload(dm, 1042)["data"]["profile"]}
+
+        # 稳定字段只有最新值，不带历史
+        self.assertEqual(items["生日"], {"label": "生日", "value": "11月2日"})
+
+        changed = items["特长"]
+        self.assertEqual(changed["value"], "ひとの長所を見つけること！")
+        self.assertEqual(
+            changed["values"],
+            [
+                {"value": "特技と言えるようなことは何も…", "generation": "104期"},
+                {"value": "ひとの長所を見つけること！", "generation": "105期"},
+            ],
+        )
+
+    def test_profile_history_range_labels(self):
+        # 追加式顿号列表 → 项目级 segments：基线项不标注，新增项标注区间
+        def entry(pid, gen, intro):
+            return {
+                "profile_id": pid,
+                "generation": gen,
+                "introduction": intro,
+                "graduate_introduction": "",
+                "stand_image_id": pid,
+            }
+
+        dm = _FakeCharaDM(
+            member_profiles=[
+                entry(1, "103期", "趣味　釣り\n特技　絵"),
+                entry(2, "104期", "趣味　釣り、配信\n特技　絵"),
+                entry(3, "卒業後", "趣味　釣り、配信\n特技　絵、作詞"),
+            ]
+        )
+        items = {i["label"]: i for i in build_chara_render_payload(dm, 1)["data"]["profile"]}
+
+        # 新增项延续到最后 → 「104期〜」；最后一期才新增 → 单期原样
+        self.assertEqual(items["兴趣"]["value"], "釣り、配信")
+        self.assertEqual(
+            items["兴趣"]["segments"],
+            [
+                {"text": "釣り"},
+                {"text": "配信", "generation": "104期〜"},
+            ],
+        )
+        self.assertNotIn("values", items["兴趣"])
+        self.assertEqual(
+            items["特长"]["segments"],
+            [
+                {"text": "絵"},
+                {"text": "作詞", "generation": "卒業後"},
+            ],
+        )
+
+    def test_profile_replacement_range_labels(self):
+        # 整体替换式变化 → 整值 values 历史，跨年度段压缩区间
+        def entry(pid, gen, intro):
+            return {
+                "profile_id": pid,
+                "generation": gen,
+                "introduction": intro,
+                "graduate_introduction": "",
+                "stand_image_id": pid,
+            }
+
+        dm = _FakeCharaDM(
+            member_profiles=[
+                entry(1, "103期", "特技　クラシックバレエ"),
+                entry(2, "104期", "特技　クラシックバレエ"),
+                entry(3, "卒業後", "特技　バレエ"),
+            ]
+        )
+        items = {i["label"]: i for i in build_chara_render_payload(dm, 1)["data"]["profile"]}
+        changed = items["特长"]
+        self.assertNotIn("segments", changed)
+        self.assertEqual(
+            changed["values"],
+            [
+                {"value": "クラシックバレエ", "generation": "103〜104期"},
+                {"value": "バレエ", "generation": "卒業後"},
+            ],
+        )
+
     def test_missing_optional_fields(self):
         dm = _FakeCharaDM(
             generation="",

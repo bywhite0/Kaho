@@ -1,6 +1,8 @@
 # 对齐 Kozue 各 route 的 Pydantic 请求模型（schema_version=1），
 # 只传绘图所需字段与稳定资源引用，不传原始 masterdata。
 
+import re
+
 from src.utils.formatters import parse_intro
 
 LIST_RENDER_ROUTE = "/api/llll/list"
@@ -60,19 +62,111 @@ def _parse_profile_items(introduction) -> list:
     return items
 
 
+def _collect_profile_eras(dm, char_id) -> list:
+    """按时间顺序返回 (期数标签, 档案解析结果)，解析不出档案的条目跳过。"""
+    gen = dm.get_generation_str(char_id)
+    eras = []
+    for p in dm.get_member_profiles(char_id):
+        parsed = parse_intro(str(p.get("introduction") or ""))
+        if not parsed:
+            continue
+        label = str(p.get("generation") or "").strip() or gen
+        eras.append((label, parsed))
+    return eras
+
+
+def _era_range_label(start: str, end: str, final_era: str) -> str:
+    """取值适用区间的 badge 文本：单期原样，延续到最后用「起〜」，其余用区间。"""
+    if start == end:
+        return start
+    if end == final_era:
+        return f"{start}〜"
+    m_start = re.match(r"^(\d+)期$", start)
+    m_end = re.match(r"^\d+期$", end)
+    if m_start and m_end:
+        return f"{m_start.group(1)}〜{end}"
+    return f"{start}〜{end}"
+
+
+def _split_profile_items(value: str):
+    """顿号列表拆项；出现括号被拆断等歧义时返回 None，交回整值路径。"""
+    items = [s.strip() for s in value.split("、") if s.strip()]
+    for item in items:
+        if item.count("（") != item.count("）") or item.count("(") != item.count(")"):
+            return None
+    return items
+
+
+def _try_profile_segments(present: list, final_era: str):
+    """项目级细分：各年度均为前一年度列表的尾部追加时，按项标注新增区间。"""
+    prev = []
+    first_seen = {}
+    for era_label, value in present:
+        items = _split_profile_items(value)
+        if items is None or items[: len(prev)] != prev:
+            return None
+        for item in items[len(prev) :]:
+            first_seen[item] = era_label
+        prev = items
+    base_era = present[0][0]
+    field_final = present[-1][0]
+    segments = []
+    for item in prev:
+        seg = {"text": item}
+        if first_seen[item] != base_era:
+            seg["generation"] = _era_range_label(first_seen[item], field_final, final_era)
+        segments.append(seg)
+    return segments
+
+
+def _profile_value_runs(present: list, final_era: str) -> list:
+    """整值历史：按取值变化切分连续段，badge 标注各段适用区间。"""
+    runs = []
+    for era_label, value in present:
+        if runs and runs[-1]["value"] == value:
+            runs[-1]["end"] = era_label
+        else:
+            runs.append({"value": value, "start": era_label, "end": era_label})
+    return [
+        {
+            "value": r["value"],
+            "generation": _era_range_label(r["start"], r["end"], final_era),
+        }
+        for r in runs
+    ]
+
+
 def build_chara_profile_items(dm, char_id) -> list:
     """解析角色档案为 label/value 列表。
 
     最终版 masterdata 已清空 Characters.Introduction，档案 stats 移入
-    MemberProfiles 各条目的 Introduction；取最新条目，失败再回退旧字段。
+    MemberProfiles 各条目的 Introduction。取值随年度变化时：追加式的顿号
+    列表输出项目级 segments，仅新增项带期数 badge；整体替换输出 values
+    整值历史。全部解析失败再回退旧字段。
     """
-    profiles = dm.get_member_profiles(char_id)
-    if profiles:
-        items = _parse_profile_items(profiles[-1].get("introduction"))
-        if items:
-            return items
-    char = dm.get_character(char_id) or {}
-    return _parse_profile_items(char.get("Introduction"))
+    eras = _collect_profile_eras(dm, char_id)
+    if not eras:
+        char = dm.get_character(char_id) or {}
+        return _parse_profile_items(char.get("Introduction"))
+    final_era = eras[-1][0]
+    items = []
+    for key, label in _CHARA_PROFILE_LABELS:
+        present = []
+        for era_label, parsed in eras:
+            value = str(parsed.get(key) or "").strip()
+            if value:
+                present.append((era_label, value))
+        if not present:
+            continue
+        item = {"label": label, "value": present[-1][1]}
+        if len({value for _, value in present}) > 1:
+            segments = _try_profile_segments(present, final_era)
+            if segments is not None:
+                item["segments"] = segments
+            else:
+                item["values"] = _profile_value_runs(present, final_era)
+        items.append(item)
+    return items
 
 
 def build_chara_render_payload(dm, char_id) -> dict:
