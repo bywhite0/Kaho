@@ -394,8 +394,24 @@ DUPLICATE_CELL_WIDTH = 408
 DUPLICATE_CELL_HEIGHT = 200
 DUPLICATE_HEADER_HEIGHT = 80
 
-RENDER_CACHE_DIR_NAME = "rendered_v1"
+RENDER_CACHE_DIR_NAME = "rendered_v2"
+"""渲染逻辑（字体、布局等）变更时递增版本号，旧目录会在插件加载时被清理"""
 OVERVIEW_CACHE_FILE_NAME = "overview.png"
+
+
+def _cleanup_stale_render_cache() -> None:
+    """删除旧版本的渲染缓存目录，避免渲染逻辑变更后继续发送旧图"""
+    try:
+        for entry in cfg.cache_dir_path.glob("rendered_v*"):
+            if entry.name == RENDER_CACHE_DIR_NAME or not entry.is_dir():
+                continue
+            shutil.rmtree(entry)
+            logger.info(f"已清理旧渲染缓存目录：{entry}")
+    except OSError as e:
+        logger.warning(f"清理旧渲染缓存失败：{e}")
+
+
+_cleanup_stale_render_cache()
 
 
 def _render_cache_path(name: str | None = None) -> Path:
