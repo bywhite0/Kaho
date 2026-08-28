@@ -797,15 +797,29 @@ def _load_font(
     *,
     bold: bool = False,
 ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    # 裸文件名由 PIL 在系统字体目录中搜索（Windows: C:\Windows\Fonts，Linux: XDG 字体目录）
+    # 优先 Noto/思源系与国产厂商字体，微软雅黑、黑体作为 Windows 最后回退
     font_names = (
         (
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
             "NotoSansCJK-Bold.ttc",
+            "NotoSansSC-Bold.ttf",
+            "SourceHanSansSC-Bold.otf",
+            "HarmonyOS_Sans_SC_Bold.ttf",
+            "MiSans-Bold.ttf",
+            "msyhbd.ttc",
+            "simhei.ttf",
         )
         if bold
         else (
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
             "NotoSansCJK-Regular.ttc",
+            "NotoSansSC-Regular.ttf",
+            "SourceHanSansSC-Regular.otf",
+            "HarmonyOS_Sans_SC_Regular.ttf",
+            "MiSans-Regular.ttf",
+            "msyh.ttc",
+            "simhei.ttf",
         )
     )
     for font_name in font_names:
@@ -813,6 +827,7 @@ def _load_font(
             return ImageFont.truetype(font_name, size=size)
         except OSError:
             continue
+    logger.warning("未找到 CJK 字体，回退到 PIL 默认字体，中文将无法正常渲染")
     return ImageFont.load_default(size=size)
 
 
