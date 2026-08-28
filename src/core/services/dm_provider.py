@@ -3,7 +3,6 @@ import os
 
 from src.core.data_manager import DataManager
 
-
 _dm = None
 _dm_lock = asyncio.Lock()
 

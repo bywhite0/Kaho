@@ -10,5 +10,21 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = []
+dev = ["ruff>=0.8.0"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.format]
+line-ending = "lf"
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "UP", "B", "RUF"]
+# RUF001-003：中文文案误报；B008：NoneBot 处理器默认参数惯用法；UP006/UP035：注解现代化待后续批量处理
+ignore = ["RUF001", "RUF002", "RUF003", "B008", "UP006", "UP035"]
+
+[tool.ruff.lint.per-file-ignores]
+# 脚本需先调整 sys.path 再导入
+"scripts/*.py" = ["E402"]
 

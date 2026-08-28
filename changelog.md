@@ -1,4 +1,12 @@
 # 更新日志
+## 0.8.0 - Unreleased
+
+- `/chara` 新增角色各年度简介展示，接入 `MemberProfiles.yaml` 按年度分组渲染。
+- `/card` 修复音击联动卡（LimitedType=202）重复展示“特训后”卡面的问题，仅展示 state0。
+
+### 技术改动
+- 新增 ruff Lint 基线（`uv run ruff check .`），并修复现存低风险问题。
+
 ## 0.7.0 - 2026-06-06
 
 - 数据存储重构为文件缓存方案，移除对 SQLite 数据库的运行时依赖。

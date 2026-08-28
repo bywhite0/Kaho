@@ -2,10 +2,10 @@ from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
 
-from src.utils.formatters import parse_intro
 from src.core.services.t2i import get_t2i_service
-from ._common import get_dm_instance
+from src.utils.formatters import parse_intro
 
+from ._common import get_dm_instance
 
 chara_cmd = on_command("chara")
 

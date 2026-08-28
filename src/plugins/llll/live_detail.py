@@ -4,7 +4,6 @@ from nonebot.params import CommandArg
 
 from src.core.services.with_live_image import generate_with_live_detail_image
 
-
 live_detail_cmd = on_command("live_detail")
 
 HELP_TEXT = "用法: /live_detail [序号] [--spoiler]，序号需为正整数"

@@ -3,8 +3,8 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
 
 from src.core.services.t2i import get_t2i_service
-from ._common import get_dm_instance
 
+from ._common import get_dm_instance
 
 find_cmd = on_command("find")
 

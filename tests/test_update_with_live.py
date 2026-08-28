@@ -11,7 +11,6 @@ import nonebot
 
 from src.core.services.game_api import GameApiService
 
-
 TEST_API_ENV = {
     "GAME_API_BASE_URL": "https://example.com/v1",
     "GAME_API_HOST": "example.com",

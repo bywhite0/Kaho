@@ -27,6 +27,7 @@ A NoneBot2-based bot for Link! Like! LoveLive! (Hasu no sora Jogakuin School Ido
 
 ## Local Tests
 
+- Lint: `uv run ruff check .`
 - Fast tests (no real masterdata required): `uv run python scripts/run_fast_tests.py`
 - Realdata tests (uses sampled real masterdata): `uv run python scripts/run_realdata_tests.py`
 - Realdata tests with custom path: `uv run python scripts/run_realdata_tests.py <masterdata_path>`

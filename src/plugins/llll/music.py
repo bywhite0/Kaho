@@ -3,8 +3,8 @@ from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
 
 from src.core.services.t2i import get_t2i_service
-from ._common import get_dm_instance
 
+from ._common import get_dm_instance
 
 music_cmd = on_command("music")
 MAX_MUSIC_RESULTS = 12
@@ -256,7 +256,10 @@ async def _(args: Message = CommandArg()):
                 )
                 bonus = dm.get_mastery_bonus(skill_name, level) or {}
                 if "GainVoltagePt" in bonus:
-                    bonus_text = f"获得电压点 {bonus.get('DemandVoltagePt')}pt 时，追加获得 {bonus.get('GainVoltagePt')}pt"
+                    bonus_text = (
+                        f"获得电压点 {bonus.get('DemandVoltagePt')}pt 时，"
+                        f"追加获得 {bonus.get('GainVoltagePt')}pt"
+                    )
                 elif "GainMentalPt" in bonus:
                     bonus_text = f"Mental 减少 {bonus.get('DemandDamagePt')} 时，回复 {bonus.get('GainMentalPt')}"
                 elif "LoveRate" in bonus:

@@ -2,8 +2,8 @@ import asyncio
 
 from nonebot import on_command
 from nonebot.permission import SUPERUSER
-from src.plugins.llll._common import get_dm_instance, get_version_path
 
+from src.plugins.llll._common import get_dm_instance, get_version_path
 
 dbrebuild_cmd = on_command("dbrebuild", permission=SUPERUSER)
 

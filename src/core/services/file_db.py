@@ -20,7 +20,7 @@ class FileDB:
             if self._loaded:
                 return
             try:
-                with open(self.path, "r", encoding="utf-8") as f:
+                with open(self.path, encoding="utf-8") as f:
                     payload = json.load(f)
                 if isinstance(payload, dict):
                     self._data = payload

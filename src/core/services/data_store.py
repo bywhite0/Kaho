@@ -63,7 +63,7 @@ class DataStore:
         if not os.path.exists(version_path):
             logger.warning(f"版本文件不存在: {version_path}")
             return False
-        with open(version_path, "r", encoding="utf-8") as f:
+        with open(version_path, encoding="utf-8") as f:
             version = f.read().strip()
         stored = self.get_meta("current_version")
         logger.info(f"读取当前版本: cache={stored or '-'} file={version or '-'}")
@@ -79,7 +79,7 @@ class DataStore:
     def rebuild(self, version_path, sanitizer=None):
         logger.info("开始重建缓存...")
         if os.path.exists(version_path):
-            with open(version_path, "r", encoding="utf-8") as f:
+            with open(version_path, encoding="utf-8") as f:
                 version = f.read().strip()
             self.set_meta("current_version", version)
             logger.info(f"重建版本设置为: {version}")

@@ -1,7 +1,7 @@
+import re
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-import re
 from typing import List, Optional, Tuple
 
 from PIL import Image, ImageChops, ImageDraw, ImageSequence

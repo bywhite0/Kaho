@@ -5,7 +5,6 @@ from nonebot.permission import SUPERUSER
 
 from src.core.services.game_api import refresh_with_live_data
 
-
 update_cmd = on_command("update", permission=SUPERUSER)
 
 HELP_TEXT = "用法:\n/update with_live - 刷新当前 with_live 信息"

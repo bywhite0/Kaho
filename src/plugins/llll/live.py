@@ -3,7 +3,6 @@ from nonebot.adapters.onebot.v11 import MessageSegment
 
 from src.core.services.with_live_image import generate_with_live_image
 
-
 live_cmd = on_command("live")
 
 

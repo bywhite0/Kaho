@@ -210,7 +210,7 @@ class T2IService:
 
         try:
             font = ImageFont.truetype("arial.ttf", font_size)
-        except IOError:
+        except OSError:
             font = ImageFont.load_default()
 
         draw.text((20, 20), text_content, fill=(0, 0, 0), font=font)

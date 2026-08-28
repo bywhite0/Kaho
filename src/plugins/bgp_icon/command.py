@@ -7,7 +7,6 @@ from nonebot.params import CommandArg
 
 from src.core.services.bgp_icon_image import generate_bgp_icon_image
 
-
 bgp_icon_cmd = on_command("bgp_icon")
 HELP_TEXT = "用法: /bgp_icon [frame] [图片]，默认 frame 为 bgp"
 

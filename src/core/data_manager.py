@@ -2,9 +2,9 @@ import csv
 import os
 import re
 
-from src.core.services.data_store import DataStore
 from src.core.data_manager_search import DataManagerSearchMixin
 from src.core.data_manager_stage import DataManagerStageMixin
+from src.core.services.data_store import DataStore
 
 try:
     from nonebot import logger
@@ -582,7 +582,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             return None
 
         try:
-            with open(csv_path, "r", encoding="utf-8") as f:
+            with open(csv_path, encoding="utf-8") as f:
                 reader = csv.reader(f)
                 header = next(reader, None)
                 if not header:
@@ -632,7 +632,7 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
         # Subsequent sections start at the times in `sections`.
         # Total usually 5 sections.
 
-        section_boundaries = [0] + sorted(sections) + [end_time]
+        section_boundaries = [0, *sorted(sections), end_time]
         # Remove duplicates if 0 is already in sections (unlikely but safe)
         section_boundaries = sorted(list(set(section_boundaries)))
 

@@ -179,12 +179,12 @@ class MasterDataCacheManager:
     ):
         loader = _YAML_LOADER
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 return yaml.load(f, Loader=loader)
         except Exception:
             if sanitizer is None:
                 raise
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 content = sanitizer(f.read())
             return yaml.load(content, Loader=loader)
 
@@ -209,7 +209,7 @@ class MasterDataCacheManager:
         if not os.path.exists(cache_path):
             return None
         try:
-            with open(cache_path, "r", encoding="utf-8") as f:
+            with open(cache_path, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return None
