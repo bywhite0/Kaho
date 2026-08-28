@@ -1,7 +1,12 @@
-from nonebot import on_command
+from nonebot import logger, on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
 
+from src.core.services.draw_api import get_draw_api_service
+from src.core.services.draw_payloads import (
+    FIND_RENDER_ROUTE,
+    build_find_render_payload,
+)
 from src.core.services.t2i import get_t2i_service
 
 from ._common import get_dm_instance
@@ -18,6 +23,24 @@ async def _(args: Message = CommandArg()):
         await find_cmd.finish("未找到。")
         return
 
+    img_bytes = None
+    draw_api = get_draw_api_service()
+    if draw_api.enabled:
+        try:
+            payload = build_find_render_payload(dm, cid)
+            img_bytes = await draw_api.render(FIND_RENDER_ROUTE, payload)
+        except Exception:
+            logger.exception("绘图服务渲染 find 失败，回退 T2I")
+
+    if img_bytes is None:
+        img_bytes = await _render_t2i(dm, cid)
+        if img_bytes is None:
+            return
+
+    await find_cmd.finish(MessageSegment.image(img_bytes))
+
+
+async def _render_t2i(dm, cid):
     cards_data = dm.get_cards_by_character(cid)
 
     series_map = {}
@@ -31,8 +54,8 @@ async def _(args: Message = CommandArg()):
     for sid in sorted(series_map.keys()):
         cards = series_map[sid]
 
-        normal_card = next((c for c in cards if c.get("State") == 0), None)
-        idolized_card = next((c for c in cards if c.get("State") == 1), None)
+        normal_card = next((c for c in cards if c["Id"] % 10 == 0), None)
+        idolized_card = next((c for c in cards if c["Id"] % 10 == 1), None)
 
         images = []
         if normal_card:
@@ -70,9 +93,7 @@ async def _(args: Message = CommandArg()):
     }
 
     try:
-        img_bytes = await get_t2i_service().generate_image("find.html", data)
+        return await get_t2i_service().generate_image("find.html", data)
     except Exception as e:
         await find_cmd.finish(f"生成图片失败: {e}")
-        return
-
-    await find_cmd.finish(MessageSegment.image(img_bytes))
+        return None

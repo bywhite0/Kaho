@@ -1,9 +1,12 @@
 import unittest
+from typing import ClassVar
 
 from src.core.services.draw_payloads import (
     CHARA_RENDER_ROUTE,
+    FIND_RENDER_ROUTE,
     LIST_RENDER_ROUTE,
     build_chara_render_payload,
+    build_find_render_payload,
     build_list_render_payload,
 )
 
@@ -432,6 +435,175 @@ class BuildCharaRenderPayloadTest(unittest.TestCase):
         payload = build_chara_render_payload(dm, 1021)
         self.assertEqual([g["id"] for g in payload["data"]["gifts"]], [9])
         self.assertEqual(list(payload["assets"]["gift_icons"]), ["9"])
+
+
+class _FakeFindDM:
+    LIMITED_TYPES: ClassVar[dict] = {0: "常驻", 2: "夏季限定", 202: "音击限定"}
+
+    def __init__(
+        self,
+        cards,
+        series_meta=None,
+        rarities=None,
+        name="乙宗梢",
+        generation="102期",
+        unit="スリーズブーケ",
+        unit_id=101,
+        color="#68be8d",
+    ):
+        self._cards = cards
+        self._series_meta = series_meta or {}
+        self._rarities = rarities or {}
+        self._name = name
+        self._generation = generation
+        self._unit = unit
+        self._unit_id = unit_id
+        self._color = color
+
+    def get_cards_by_character(self, char_id):
+        return list(self._cards)
+
+    def get_card_series_meta(self, series_id):
+        return self._series_meta.get(series_id, {})
+
+    def get_rarity_name(self, rarity_id):
+        return self._rarities.get(rarity_id, str(rarity_id))
+
+    def get_character_name(self, char_id):
+        return self._name
+
+    def get_generation_str(self, char_id):
+        return self._generation
+
+    def get_character_unit(self, char_id):
+        return self._unit
+
+    def get_character_unit_id(self, char_id):
+        return self._unit_id
+
+    def get_character_theme_color(self, char_id):
+        return self._color
+
+
+def _card(card_id, series_id, rarity, name, order_id=1):
+    return {
+        "Id": card_id,
+        "CardSeriesId": series_id,
+        "Rarity": rarity,
+        "Name": name,
+        "OrderId": order_id,
+    }
+
+
+class BuildFindRenderPayloadTest(unittest.TestCase):
+    def _full_dm(self):
+        # 双形态 R 常驻（含 2-4 高阶形态，应被过滤）+ 单形态 BR 生日
+        cards = [
+            _card(10213010 + i, 1021301, 3, "オーロラスカイ") for i in range(5)
+        ] + [
+            _card(10219011 + i, 1021901, 9, "18th Birthday") for i in range(4)
+        ]
+        return _FakeFindDM(
+            cards,
+            series_meta={1021301: {"LimitedType": 0}, 1021901: {"LimitedType": 9}},
+            rarities={3: "R", 9: "BR"},
+        )
+
+    def test_route_constant(self):
+        self.assertEqual(FIND_RENDER_ROUTE, "/api/llll/find")
+
+    def test_happy_path_forms_and_summary(self):
+        payload = build_find_render_payload(self._full_dm(), 1021)
+
+        self.assertEqual(payload["schema_version"], "1")
+        self.assertEqual(payload["kind"], "llll.find")
+
+        character = payload["data"]["character"]
+        self.assertEqual(character["id"], 1021)
+        self.assertEqual(character["generation"], "102期")
+        self.assertEqual(character["color"], "#68be8d")
+
+        cards = payload["data"]["cards"]
+        self.assertEqual(
+            cards,
+            [
+                {
+                    "id": 10213010,
+                    "name": "オーロラスカイ",
+                    "rarity": "R",
+                    "series": "常驻",
+                    "form": "特训前",
+                    "thumb": {"type": "image_card_middle_vertical", "id": "10213010"},
+                },
+                {
+                    "id": 10213011,
+                    "name": "オーロラスカイ",
+                    "rarity": "R",
+                    "series": "常驻",
+                    "form": "特训后",
+                    "thumb": {"type": "image_card_middle_vertical", "id": "10213011"},
+                },
+                {
+                    "id": 10219011,
+                    "name": "18th Birthday",
+                    "rarity": "BR",
+                    # LimitedType 9 不在 fake 映射表，回退 Type 标签
+                    "series": "Type 9",
+                    "thumb": {"type": "image_card_middle_vertical", "id": "10219011"},
+                },
+            ],
+        )
+        self.assertEqual(payload["data"]["total_count"], 2)
+        self.assertEqual(
+            payload["data"]["rarity_summary"],
+            [{"label": "R", "count": 1}, {"label": "BR", "count": 1}],
+        )
+        self.assertEqual(payload["assets"]["icon"], {"type": "chara_icon", "id": "1021"})
+        self.assertEqual(payload["assets"]["unit_logo"], {"type": "unit_logo", "id": "101"})
+
+    def test_placeholder_series_excluded(self):
+        dm = self._full_dm()
+        dm._cards += [_card(10105000, 1010500, 5, "？？？", order_id=99999999)]
+        payload = build_find_render_payload(dm, 1021)
+        self.assertEqual(payload["data"]["total_count"], 2)
+        self.assertNotIn("？？？", [c["name"] for c in payload["data"]["cards"]])
+
+    def test_ongeki_series_shows_only_first_form(self):
+        cards = [_card(10215280 + i, 1021528, 5, "STARTLINER") for i in range(2)]
+        dm = _FakeFindDM(
+            cards,
+            series_meta={1021528: {"LimitedType": 202}},
+            rarities={5: "UR"},
+        )
+        payload = build_find_render_payload(dm, 1021)
+        cards_out = payload["data"]["cards"]
+        self.assertEqual(len(cards_out), 1)
+        self.assertEqual(cards_out[0]["id"], 10215280)
+        self.assertEqual(cards_out[0]["series"], "音击限定")
+        self.assertNotIn("form", cards_out[0])
+
+    def test_no_cards_raises(self):
+        with self.assertRaises(ValueError):
+            build_find_render_payload(_FakeFindDM([]), 1021)
+
+    def test_missing_optional_fields(self):
+        dm = _FakeFindDM(
+            [_card(10213010, 1021301, 3, "テスト")],
+            series_meta={1021301: {"LimitedType": 0}},
+            rarities={3: "R"},
+            generation="",
+            unit=None,
+            unit_id=None,
+            color=None,
+        )
+        payload = build_find_render_payload(dm, 1)
+        character = payload["data"]["character"]
+        self.assertIsNone(character["generation"])
+        self.assertIsNone(character["unit"])
+        self.assertNotIn("color", character)
+        self.assertNotIn("unit_logo", payload["assets"])
+        # 系列内只有 0 形态 → 单形态，不带 form
+        self.assertNotIn("form", payload["data"]["cards"][0])
 
 
 if __name__ == "__main__":

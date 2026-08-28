@@ -7,6 +7,10 @@ from src.utils.formatters import parse_intro
 
 LIST_RENDER_ROUTE = "/api/llll/list"
 CHARA_RENDER_ROUTE = "/api/llll/chara"
+FIND_RENDER_ROUTE = "/api/llll/find"
+
+# 未实装占位卡（？？？）的 OrderId 哨兵值，不进入画廊
+_PLACEHOLDER_ORDER_ID = 99999999
 
 # 档案字段顺序即展示顺序，key 为 parse_intro 的解析结果键
 _CHARA_PROFILE_LABELS = [
@@ -253,5 +257,89 @@ def build_chara_render_payload(dm, char_id) -> dict:
         "locale": "zh-CN",
         "theme": "light",
         "data": data,
+        "assets": assets,
+    }
+
+
+def build_find_render_payload(dm, char_id) -> dict:
+    """构建 llll.find 渲染 payload。角色无可展示卡牌时抛 ValueError。
+
+    每个卡系列展示特训前/特训后两种形态（Id 末位 0/1）；无 0 形态的系列
+    （生日、偶活、LR/DR/BR 等）只展示唯一形态且不带 form 角标。
+    """
+    by_series = {}
+    for c in dm.get_cards_by_character(char_id):
+        by_series.setdefault(c["CardSeriesId"], []).append(c)
+
+    display_cards = []
+    series_rarities = []
+    for sid, entries in sorted(by_series.items()):
+        head = entries[0]
+        if head.get("OrderId") == _PLACEHOLDER_ORDER_ID:
+            continue
+        limited_type = dm.get_card_series_meta(sid).get("LimitedType")
+        series_label = dm.LIMITED_TYPES.get(
+            limited_type,
+            f"Type {limited_type}" if limited_type is not None else None,
+        )
+        form0 = next((c for c in entries if c["Id"] % 10 == 0), None)
+        form1 = next((c for c in entries if c["Id"] % 10 == 1), None)
+        # 音击联动卡特训前后卡面相同，只展示特训前（对齐 /card 行为）
+        if limited_type == 202 and form0 is not None:
+            form1 = None
+        shown = [c for c in (form0, form1) if c is not None]
+        if not shown:
+            continue
+        rarity_name = dm.get_rarity_name(head["Rarity"])
+        for c in shown:
+            item = {
+                "id": c["Id"],
+                "name": c["Name"],
+                "rarity": rarity_name,
+                "series": series_label,
+                "thumb": {"type": "image_card_middle_vertical", "id": str(c["Id"])},
+            }
+            if len(shown) == 2:
+                item["form"] = "特训前" if c["Id"] % 10 == 0 else "特训后"
+            display_cards.append(item)
+        series_rarities.append((head["Rarity"], rarity_name))
+    if not display_cards:
+        raise ValueError(f"角色 {char_id} 无可展示卡牌，无法构建 find 渲染 payload")
+
+    rarity_counter = {}
+    for rid, name in series_rarities:
+        rarity_counter[(rid, name)] = rarity_counter.get((rid, name), 0) + 1
+    rarity_summary = [
+        {"label": name, "count": count}
+        for (_, name), count in sorted(rarity_counter.items(), key=lambda kv: kv[0][0])
+    ]
+
+    character = {
+        "id": char_id,
+        "name": dm.get_character_name(char_id),
+        "generation": dm.get_generation_str(char_id) or None,
+        "unit": dm.get_character_unit(char_id),
+    }
+    # 无主题色时省略字段，交给服务端默认值
+    color = dm.get_character_theme_color(char_id)
+    if color:
+        character["color"] = color
+
+    assets = {"icon": {"type": "chara_icon", "id": str(char_id)}}
+    unit_id = dm.get_character_unit_id(char_id)
+    if unit_id:
+        assets["unit_logo"] = {"type": "unit_logo", "id": str(unit_id)}
+
+    return {
+        "schema_version": "1",
+        "kind": "llll.find",
+        "locale": "zh-CN",
+        "theme": "light",
+        "data": {
+            "character": character,
+            "cards": display_cards,
+            "total_count": len(series_rarities),
+            "rarity_summary": rarity_summary,
+        },
         "assets": assets,
     }

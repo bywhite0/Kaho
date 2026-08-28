@@ -117,11 +117,64 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
             return self.dm
 
         fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService(enabled=False)
         matcher = _DummyMatcher()
         query = self.meta.get("first_char_name") or str(self.meta["first_char_id"])
         with patch.object(find_module, "find_cmd", matcher), patch.object(
             find_module, "get_dm_instance", fake_get_dm
-        ), patch.object(find_module, "get_t2i_service", lambda: fake_t2i):
+        ), patch.object(find_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            find_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await find_module._(_DummyMessage(query))
+
+        self.assertEqual(fake_t2i.template_name, "find.html")
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+
+    async def test_find_draw_api_success(self):
+        import src.plugins.llll.find as find_module
+        from src.core.services.draw_payloads import FIND_RENDER_ROUTE
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService()
+        matcher = _DummyMatcher()
+        query = self.meta.get("first_char_name") or str(self.meta["first_char_id"])
+        with patch.object(find_module, "find_cmd", matcher), patch.object(
+            find_module, "get_dm_instance", fake_get_dm
+        ), patch.object(find_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            find_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await find_module._(_DummyMessage(query))
+
+        self.assertEqual(fake_draw.route, FIND_RENDER_ROUTE)
+        self.assertEqual(fake_draw.payload["kind"], "llll.find")
+        self.assertGreaterEqual(len(fake_draw.payload["data"]["cards"]), 1)
+        # 绘图服务成功时不再走 T2I
+        self.assertIsNone(fake_t2i.template_name)
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+
+    async def test_find_draw_api_failure_falls_back_to_t2i(self):
+        import src.plugins.llll.find as find_module
+        from src.core.services.draw_api import DrawApiError
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService(error=DrawApiError("boom"))
+        matcher = _DummyMatcher()
+        query = self.meta.get("first_char_name") or str(self.meta["first_char_id"])
+        with patch.object(find_module, "find_cmd", matcher), patch.object(
+            find_module, "get_dm_instance", fake_get_dm
+        ), patch.object(find_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            find_module, "get_draw_api_service", lambda: fake_draw
+        ):
             with self.assertRaises(_FinishCalled) as ctx:
                 await find_module._(_DummyMessage(query))
 
