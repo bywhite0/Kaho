@@ -1,16 +1,19 @@
 [project]
 name = "Kaho"
 version = "0.7.0"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
   "nonebot2[aiohttp,fastapi,httpx]",
   "nonebot-adapter-onebot>=2.4.6",
+  "nonebot-plugin-localstore>=0.7.4",
   "jinja2>=3.1.6",
   "pillow>=11.3.0",
+  "emoji>=2.0.0",
+  "send2trash>=1.8.0",
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.8.0"]
+dev = ["ruff>=0.8.0", "pytest>=8.0.0"]
 
 [tool.ruff]
 line-length = 120
@@ -27,4 +30,6 @@ ignore = ["RUF001", "RUF002", "RUF003", "B008", "UP006", "UP035"]
 [tool.ruff.lint.per-file-ignores]
 # 脚本需先调整 sys.path 再导入
 "scripts/*.py" = ["E402"]
+# 冒烟脚本需先设置 LOCALSTORE 环境变量再 import nonebot
+"src/plugins/gallery/tests/*.py" = ["E402"]
 
