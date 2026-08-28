@@ -1,0 +1,2 @@
+# 文本文件统一 LF，二进制由 git 自动识别
+* text=auto eol=lf
