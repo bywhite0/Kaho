@@ -30,6 +30,7 @@ pip install nonebot-plugin-localstore pillow emoji httpx send2trash
 ```yaml
 GALLERY__SEND_PIC_LIMIT: 10        # 单次抽图上限
 GALLERY__SEND_PIC_AS_MEME: true    # 以表情包形式发图
+GALLERY__SEND_PIC_MODE: base64     # 发图方式：base64 内联字节（协议端异机可用）/ path 直发本地路径（需协议端同机，开销更低）
 GALLERY__NAME_DATA_FILE: gallery_name_indices.json
 GALLERY__ACCESS_DATA_FILE: gallery_access.json   # 黑白名单数据文件名
 ```

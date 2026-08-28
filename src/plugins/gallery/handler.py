@@ -6,8 +6,8 @@ from pathlib import Path
 
 from nonebot import logger
 from nonebot.adapters import Message
+from nonebot.adapters.onebot.v11 import ActionFailed, GroupMessageEvent
 from nonebot.adapters.onebot.v11 import Bot as OneBot
-from nonebot.adapters.onebot.v11 import GroupMessageEvent
 from nonebot.adapters.onebot.v11 import Message as OneBotMessage
 from nonebot.adapters.onebot.v11 import MessageEvent as OneBotMessageEvent
 from nonebot.adapters.onebot.v11 import MessageSegment as OneBotMessageSegment
@@ -202,10 +202,7 @@ async def _(bot: OneBot, arg_msg: Message = CommandArg()):
         # 尝试按图片id获取图片
         if not (pic_file := get_picture_by_id(int(arg1))):
             await get_picture.finish(f"未找到图片id {arg1} 对应的图片。")
-        if cfg.send_pic_as_meme:
-            await get_picture.finish(meme_image_segment(pic_file))
-        else:
-            await get_picture.finish(OneBotMessageSegment.image(pic_file))
+        await get_picture.finish(await asyncio.to_thread(_pic_seg, pic_file))
 
     num = 1
     if len(args) > 1 and args[1].isdigit():
@@ -220,7 +217,7 @@ async def _(bot: OneBot, arg_msg: Message = CommandArg()):
     if num > cfg.send_pic_limit:
         await get_picture.finish(f"每次最多发送 {cfg.send_pic_limit} 张图片。")
 
-    await get_picture.finish(_build_pic_message(pic_files, num))
+    await get_picture.finish(await asyncio.to_thread(_build_pic_message, pic_files, num))
 
 
 def _normalize_tags(raw: str) -> list[str]:
@@ -233,15 +230,19 @@ def _normalize_tags(raw: str) -> list[str]:
     return normalized
 
 
+def _pic_seg(pic_file: Path) -> OneBotMessageSegment:
+    """构造图片消息段：base64 模式内联字节（协议端异机可用），path 模式直发本地路径（需同机）"""
+    file = pic_file if cfg.send_pic_mode == "path" else pic_file.read_bytes()
+    if cfg.send_pic_as_meme:
+        return meme_image_segment(file)
+    return OneBotMessageSegment.image(file)
+
+
 def _build_pic_message(pic_files: list[Path], num: int) -> OneBotMessage:
     """从候选图片中随机抽取 num 张组装成消息"""
     message = OneBotMessage()
     for _ in range(num):
-        pic_file = random.choice(pic_files)
-        if cfg.send_pic_as_meme:
-            message += meme_image_segment(pic_file)
-        else:
-            message += OneBotMessageSegment.image(pic_file)
+        message += _pic_seg(random.choice(pic_files))
     return message
 
 
@@ -255,21 +256,23 @@ def _image_cache_dir() -> Path:
     return cache_dir
 
 
-async def _get_image_local(bot: OneBot, file: str) -> Path:
-    """调用bot.get_image()获取file对应的本地图片路径
+async def _get_image_local(bot: OneBot, file: str) -> Path | None:
+    """调用bot.get_image()获取file对应的图片，返回本机可读的图片路径
 
-    部分协议实现可能返回网络路径，此函数会将其下载到本地缓存目录并返回本地路径
+    协议实现可能返回网络路径（下载到缓存后返回），也可能返回协议端机器上的
+    本地路径——协议端与 bot 不同机时该路径不可读，返回 None 交由调用方回退
     """
     r = await bot.get_image(file=file)
     file_url = r["file"]
-    if not file_url.startswith(("http://", "https://")):
-        return Path(file_url)
+    if file_url.startswith(("http://", "https://")):
+        pic_path = _image_cache_dir() / file
+        resp = await HTTPX_CLIENT.get(file_url)
+        resp.raise_for_status()
+        pic_path.write_bytes(resp.content)
+        return pic_path
 
-    pic_path = _image_cache_dir() / file
-    resp = await HTTPX_CLIENT.get(file_url)
-    resp.raise_for_status()
-    pic_path.write_bytes(resp.content)
-    return pic_path
+    path = Path(file_url)
+    return path if path.is_file() else None
 
 
 async def _get_image_from_url(url: str, file: str) -> Path | None:
@@ -307,10 +310,12 @@ async def _get_pictures_from_message(
                 # 普通消息中的图片，使用bot.get_image获取图片附件
                 try:
                     p = await _get_image_local(bot, file)
-                except NetworkError as e:
+                except (ActionFailed, NetworkError) as e:
                     logger.warning(f"bot.get_image获取图片附件失败: {file}, {e}")
-                    # 回退到使用http client获取图片附件
-                    p = await _get_image_from_url(seg.data["url"], file)
+                    p = None
+                if p is None and (url := seg.data.get("url")):
+                    # 协议端不在本机或 get_image 失败，回退到 http 直接下载
+                    p = await _get_image_from_url(url, file)
             if p:
                 pictures.append(p)
             else:
@@ -507,7 +512,7 @@ async def _(arg_msg: Message = CommandArg()):
         wanted = " ".join("#" + t for t in tags)
         await tag_search.finish(f"没有找到带有标签 {wanted} 的图片。")
 
-    message = _build_pic_message(matched, min(num, len(matched)))
+    message = await asyncio.to_thread(_build_pic_message, matched, min(num, len(matched)))
     await tag_search.finish(message)
 
 
