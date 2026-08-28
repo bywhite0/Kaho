@@ -40,6 +40,22 @@ class _FakeT2IService:
         return b"fake-image"
 
 
+class _FakeDrawApiService:
+    def __init__(self, enabled=True, result=b"draw-image", error=None):
+        self.enabled = enabled
+        self.result = result
+        self.error = error
+        self.route = None
+        self.payload = None
+
+    async def render(self, route, payload):
+        self.route = route
+        self.payload = payload
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
 class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
@@ -242,13 +258,70 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
             return self.dm
 
         fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService(enabled=False)
         matcher = _DummyMatcher()
         with patch.object(list_module, "list_cmd", matcher), patch.object(
             list_module, "get_dm_instance", fake_get_dm
-        ), patch.object(list_module, "get_t2i_service", lambda: fake_t2i):
+        ), patch.object(list_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            list_module, "get_draw_api_service", lambda: fake_draw
+        ):
             with self.assertRaises(_FinishCalled) as ctx:
                 await list_module._()
 
+        self.assertEqual(fake_t2i.template_name, "list.html")
+        # 绘图服务未启用时不应发起渲染请求
+        self.assertIsNone(fake_draw.route)
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+
+    async def test_list_draw_api_success(self):
+        import src.plugins.llll.list as list_module
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService()
+        matcher = _DummyMatcher()
+        with patch.object(list_module, "list_cmd", matcher), patch.object(
+            list_module, "get_dm_instance", fake_get_dm
+        ), patch.object(list_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            list_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await list_module._()
+
+        self.assertEqual(fake_draw.route, "/api/llll/list")
+        self.assertEqual(fake_draw.payload["schema_version"], "1")
+        self.assertEqual(fake_draw.payload["kind"], "llll.list")
+        self.assertTrue(fake_draw.payload["data"]["characters"])
+        first = fake_draw.payload["data"]["characters"][0]
+        self.assertEqual(first["icon"]["type"], "chara_icon")
+        # 命中绘图服务时不应再走 T2I
+        self.assertIsNone(fake_t2i.template_name)
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+
+    async def test_list_draw_api_failure_falls_back_to_t2i(self):
+        import src.plugins.llll.list as list_module
+        from src.core.services.draw_api import DrawApiError
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService(error=DrawApiError("boom"))
+        matcher = _DummyMatcher()
+        with patch.object(list_module, "list_cmd", matcher), patch.object(
+            list_module, "get_dm_instance", fake_get_dm
+        ), patch.object(list_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            list_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await list_module._()
+
+        # 绘图服务失败后回退 T2I 渲染
+        self.assertEqual(fake_draw.route, "/api/llll/list")
         self.assertEqual(fake_t2i.template_name, "list.html")
         self.assertIsInstance(ctx.exception.payload, MessageSegment)
         self.assertEqual(ctx.exception.payload.type, "image")

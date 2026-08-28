@@ -3,8 +3,10 @@
 
 - `/chara` 新增角色各年度简介展示，接入 `MemberProfiles.yaml` 按年度分组渲染。
 - `/card` 修复音击联动卡（LimitedType=202）重复展示“特训后”卡面的问题，仅展示 state0。
+- `/list` 支持通过外部绘图服务（Kozue）渲染，未配置 `DRAW_API_BASE_URL` 或调用失败时自动回退 T2I。
 
 ### 技术改动
+- 新增 `DrawApiService` 绘图服务 client 与 `llll.list` 结构化渲染 payload builder，请求契约对齐 Kozue 的 Pydantic model。
 - 新增 ruff Lint 基线（`uv run ruff check .`），并修复现存低风险问题。
 
 ## 0.7.0 - 2026-06-06

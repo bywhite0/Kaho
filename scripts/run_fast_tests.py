@@ -2,7 +2,6 @@ import sys
 import unittest
 from pathlib import Path
 
-
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
@@ -12,6 +11,8 @@ FAST_MODULES = [
     "tests.test_runtime_refresh",
     "tests.test_t2i_service",
     "tests.test_dm_provider",
+    "tests.test_draw_api",
+    "tests.test_draw_payloads",
 ]
 
 

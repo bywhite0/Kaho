@@ -46,6 +46,16 @@ A NoneBot2-based bot for Link! Like! LoveLive! (Hasu no sora Jogakuin School Ido
 - `/dbrebuild`: Rebuild the local game database (Superuser only).
 - `/update with_live`: Refresh archive home snapshot and cache the latest archive detail (Superuser only).
 
+## Drawing API Configuration
+
+Optional external drawing service ([Kozue](https://github.com/bywhite0/EbyptEshiSan)). When configured, migrated commands render via the drawing API and automatically fall back to the legacy T2I pipeline on failure.
+
+- `DRAW_API_BASE_URL`: Drawing service base URL (unset = disabled)
+- `DRAW_API_TIMEOUT`: Request timeout in seconds (default: 15)
+- `DRAW_API_MAX_CONNECTIONS`: Max HTTP connections (default: 10)
+
+Currently migrated commands: `/list`.
+
 ## Game API Configuration
 
 Required environment variables:
