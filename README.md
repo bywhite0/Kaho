@@ -79,6 +79,14 @@ Credential file lookup order:
 
 The service validates the current `session_token` before requests. If expired, it will call `/user/login`, update the token, and then continue.
 
+## Live Archive Data
+
+Post-EOS live archive metadata (398 archived lives with details) is vendored as a git submodule at `external/linkura-live-data` ([ChocoLZS/linkura-live-data — `data/`](https://github.com/ChocoLZS/linkura-live-data/tree/main/data)). Run `git submodule update --init` after cloning.
+
+- `LIVE_ARCHIVE_DATA_DIR`: Optional override for the directory containing `archive.json` / `archive-details.json` (default: the submodule's `data/`)
+- Covers are resolved locally from `cache/game_api/archive_covers/` by original UUID filename; no external requests are made.
+- Comment counts are precomputed by `scripts/build_comment_counts.py` into `data/llll/comment_counts.json`.
+
 ## with_live Cache Snapshot
 
 `/update with_live` writes to `cache/game_api/with_live.json` and keeps a backup at `cache/game_api/with_live.prev.json`.
