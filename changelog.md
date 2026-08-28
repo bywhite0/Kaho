@@ -6,6 +6,8 @@
 - `/list` 支持通过外部绘图服务（Kozue）渲染，未配置 `DRAW_API_BASE_URL` 或调用失败时自动回退 T2I。
 
 ### 技术改动
+- 新增 `LiveArchiveService` 配信归档数据服务，接入 `linkura-live-data` 的全量配信列表与详情（398 场），支持类型/角色/时间筛选、UUID 封面命中与弹幕数查询，未配置 `LIVE_ARCHIVE_DATA_DIR` 时自动降级。
+- 新增 `scripts/build_comment_counts.py`（离线统计配信弹幕数）与 `scripts/build_archive_manifest.py`（归档 manifest 生成与校验）。
 - 新增 `DrawApiService` 绘图服务 client 与 `llll.list` 结构化渲染 payload builder，请求契约对齐 Kozue 的 Pydantic model。
 - 新增 ruff Lint 基线（`uv run ruff check .`），并修复现存低风险问题。
 
