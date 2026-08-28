@@ -782,6 +782,10 @@ class DataManager(DataManagerSearchMixin, DataManagerStageMixin):
             return self.unit_names.get(uid, f"Unit {uid}")
         return None
 
+    def get_character_unit_id(self, char_id):
+        self._ensure("unit_characters")
+        return self.char_units.get(char_id)
+
     def get_favorite_gifts(self, char_id):
         self._ensure("items", "favorite_gifts")
         gifts = self.favorite_gifts.get(char_id, [])

@@ -164,11 +164,14 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
             return self.dm
 
         fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService(enabled=False)
         matcher = _DummyMatcher()
         query = self.meta.get("first_char_name") or str(self.meta["first_char_id"])
         with patch.object(chara_module, "chara_cmd", matcher), patch.object(
             chara_module, "get_dm_instance", fake_get_dm
-        ), patch.object(chara_module, "get_t2i_service", lambda: fake_t2i):
+        ), patch.object(chara_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            chara_module, "get_draw_api_service", lambda: fake_draw
+        ):
             with self.assertRaises(_FinishCalled) as ctx:
                 await chara_module._(_DummyMessage(query))
 
@@ -190,10 +193,13 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
             return self.dm
 
         fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService(enabled=False)
         matcher = _DummyMatcher()
         with patch.object(chara_module, "chara_cmd", matcher), patch.object(
             chara_module, "get_dm_instance", fake_get_dm
-        ), patch.object(chara_module, "get_t2i_service", lambda: fake_t2i):
+        ), patch.object(chara_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            chara_module, "get_draw_api_service", lambda: fake_draw
+        ):
             with self.assertRaises(_FinishCalled):
                 await chara_module._(_DummyMessage(str(profile_char_id)))
 
@@ -201,6 +207,59 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(len(profiles), 1)
         self.assertIn("generation", profiles[0])
         self.assertIn("introduction", profiles[0])
+
+    async def test_chara_draw_api_success(self):
+        import src.plugins.llll.chara as chara_module
+        from src.core.services.draw_payloads import CHARA_RENDER_ROUTE
+
+        profile_char_id = self.meta.get("profile_char_id")
+        if not profile_char_id:
+            self.skipTest("fixture 中所选角色无 MemberProfiles 数据")
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService()
+        matcher = _DummyMatcher()
+        with patch.object(chara_module, "chara_cmd", matcher), patch.object(
+            chara_module, "get_dm_instance", fake_get_dm
+        ), patch.object(chara_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            chara_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await chara_module._(_DummyMessage(str(profile_char_id)))
+
+        self.assertEqual(fake_draw.route, CHARA_RENDER_ROUTE)
+        self.assertEqual(fake_draw.payload["kind"], "llll.chara")
+        self.assertGreaterEqual(len(fake_draw.payload["data"]["timelines"]), 1)
+        # 绘图服务成功时不再走 T2I
+        self.assertIsNone(fake_t2i.template_name)
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+
+    async def test_chara_draw_api_failure_falls_back_to_t2i(self):
+        import src.plugins.llll.chara as chara_module
+        from src.core.services.draw_api import DrawApiError
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService(error=DrawApiError("boom"))
+        matcher = _DummyMatcher()
+        query = self.meta.get("first_char_name") or str(self.meta["first_char_id"])
+        with patch.object(chara_module, "chara_cmd", matcher), patch.object(
+            chara_module, "get_dm_instance", fake_get_dm
+        ), patch.object(chara_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            chara_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await chara_module._(_DummyMessage(query))
+
+        self.assertEqual(fake_t2i.template_name, "chara.html")
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
 
     async def test_music_success_generate_image(self):
         import src.plugins.llll.music as music_module
