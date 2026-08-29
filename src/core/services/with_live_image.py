@@ -14,6 +14,7 @@ from PIL import Image, ImageChops, ImageColor, ImageDraw, ImageFont
 
 from src.core.data_manager import DataManager
 from src.core.services.dm_provider import get_dm, init_dm
+from src.core.services.draw_payloads import build_live_render_payload
 from src.core.services.game_api import refresh_with_live_data
 
 try:
@@ -41,6 +42,8 @@ class WithLiveImageService:
         self.cover_cache_dir = (
             self.project_root / "cache" / "game_api" / "with_live_cover"
         )
+        # Kozue exports 根即本仓库 exports，封面按 URL 哈希导出到这里供绘图服务读取
+        self.cover_export_dir = self.project_root / "exports" / "images" / "with_live"
         self.icon_path = self.project_root / "assets" / "icons" / "icon_livenow.png"
         self._dm: Optional[DataManager] = None
 
@@ -138,6 +141,90 @@ class WithLiveImageService:
         if can_use_enhanced:
             return renderer.render_detail_enhanced(detail_item, thumbnail)
         return renderer.render_detail(detail_item, thumbnail)
+
+    async def build_live_detail_render_payload(
+        self,
+        index: int,
+        auto_refresh_on_miss: bool = True,
+        show_spoiler: bool = False,
+    ) -> Dict[str, Any]:
+        """构建 /live_detail 的 Kozue 渲染 payload，序号与数据校验同本地渲染路径。"""
+        if index <= 0:
+            raise ValueError("序号必须为正整数")
+
+        snapshot, archives = await self._load_snapshot_and_archives(
+            auto_refresh_on_miss=auto_refresh_on_miss
+        )
+        if not archives:
+            raise RuntimeError("未找到 with_live 数据，请先执行 /update with_live")
+        total = len(archives)
+        if index > total:
+            raise ValueError(f"序号超出范围，可选范围: 1-{total}")
+        archive = archives[index - 1]
+
+        _, enter_detail = self._resolve_enter_detail(snapshot, archive)
+        cover_id = await self.ensure_cover_exported(archive.get("thumbnail_image_url"))
+        dm = await self._get_data_manager()
+        if dm is None:
+            raise RuntimeError("DataManager 不可用，无法构建 live 渲染 payload")
+        try:
+            return build_live_render_payload(
+                dm,
+                archive,
+                description=self._extract_detail_description(snapshot, archive),
+                enter_detail=enter_detail,
+                show_spoiler=show_spoiler,
+                cover_id=cover_id,
+                gift_point=self._resolve_gift_point(snapshot, archive),
+            )
+        finally:
+            if not self._use_shared_dm:
+                self._release_local_dm()
+
+    def _resolve_gift_point(
+        self,
+        snapshot: Dict[str, Any],
+        archive: Dict[str, Any],
+    ) -> Optional[int]:
+        """礼物点数仅最新一场归档有详情数据，其余场次返回 None。"""
+        latest = snapshot.get("latest_archive")
+        if not isinstance(latest, dict) or not self._is_same_archive(archive, latest):
+            return None
+        detail = snapshot.get("latest_archive_detail")
+        if not isinstance(detail, dict):
+            return None
+        try:
+            return int(detail.get("total_gift_pt"))
+        except (TypeError, ValueError):
+            return None
+
+    async def ensure_cover_exported(self, url: Any) -> Optional[str]:
+        """封面按 URL 哈希导出为 exports PNG，返回资源 id；取不到图片时返回 None。"""
+        cover_url = str(url or "").strip()
+        if not cover_url:
+            return None
+        digest = hashlib.sha256(cover_url.encode("utf-8")).hexdigest()
+        target = self.cover_export_dir / f"live_cover_{digest}.png"
+        if target.exists():
+            return digest
+
+        cache_path = self._build_cover_cache_path(cover_url)
+        image = self._load_cached_image(cache_path)
+        if image is None:
+            # _fetch_image 成功时落盘缓存，失败时返回占位图；占位图不导出
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                await self._fetch_image(client, cover_url)
+            image = self._load_cached_image(cache_path)
+        if image is None:
+            return None
+
+        try:
+            self.cover_export_dir.mkdir(parents=True, exist_ok=True)
+            image.save(target, format="PNG")
+        except Exception as exc:
+            logger.warning(f"导出直播封面失败: {target} error={exc}")
+            return None
+        return digest
 
     async def _load_snapshot_and_archives(
         self, auto_refresh_on_miss: bool = True
@@ -1139,6 +1226,18 @@ async def generate_with_live_detail_image(
     show_spoiler: bool = False,
 ) -> bytes:
     return await get_with_live_image_service().build_live_detail_image(
+        index=index,
+        auto_refresh_on_miss=auto_refresh_on_miss,
+        show_spoiler=show_spoiler,
+    )
+
+
+async def build_with_live_detail_render_payload(
+    index: int,
+    auto_refresh_on_miss: bool = True,
+    show_spoiler: bool = False,
+) -> Dict[str, Any]:
+    return await get_with_live_image_service().build_live_detail_render_payload(
         index=index,
         auto_refresh_on_miss=auto_refresh_on_miss,
         show_spoiler=show_spoiler,

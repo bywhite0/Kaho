@@ -1,16 +1,21 @@
 import unittest
+from datetime import datetime, timezone
 from typing import ClassVar
 
 from src.core.services.draw_payloads import (
     CHARA_RENDER_ROUTE,
     FIND_RENDER_ROUTE,
     LIST_RENDER_ROUTE,
+    LIVE_RENDER_ROUTE,
+    LIVE_SPOILER_HIDDEN_TEXT,
     MUSIC_RENDER_ROUTE,
     build_chara_render_payload,
     build_find_render_payload,
     build_list_render_payload,
+    build_live_render_payload,
     build_music_mastery_items,
     build_music_render_payload,
+    format_live_duration,
 )
 
 
@@ -799,6 +804,257 @@ class BuildMusicRenderPayloadTest(unittest.TestCase):
                 }
             ],
         )
+
+
+class _FakeLiveDM:
+    def __init__(self):
+        self.names = {1031: "日野下花帆", 1032: "村野さやか"}
+        self.colors = {1031: "#f8b500", 1032: "#5383c3"}
+        self.locations = {5: "八重咲ステージ2603"}
+
+    def get_character_name(self, char_id):
+        return self.names.get(char_id)
+
+    def get_character_theme_color(self, char_id):
+        return self.colors.get(char_id)
+
+    def get_live_location_label(self, location_id):
+        return self.locations.get(location_id)
+
+
+def _build_live_archive(**overrides):
+    archive = {
+        "archives_id": "arch-1",
+        "live_id": "live-1",
+        "name": "テスト配信",
+        "live_type": 3,
+        "live_start_time": "2026-04-16T12:00:00Z",
+        "end_time": "2026-04-16T13:00:00Z",
+        "total_playing_time_second": 3780,
+        "has_extra": True,
+        "is_extra_started": False,
+        "has_extra_admission": True,
+        "gift_stars_threshold_for_extra_admission": 500,
+        "earned_star_count": 120,
+        "character_list": [{"character_id": 1031}, {"character_id": 1032}],
+    }
+    archive.update(overrides)
+    return archive
+
+
+def _local_time_text(iso_text):
+    parsed = datetime.fromisoformat(iso_text.replace("Z", "+00:00"))
+    return parsed.astimezone().strftime("%Y/%m/%d %H:%M")
+
+
+_LIVE_NOW = datetime(2026, 5, 1, tzinfo=timezone.utc)
+
+
+class BuildLiveRenderPayloadTest(unittest.TestCase):
+    def setUp(self):
+        self.dm = _FakeLiveDM()
+
+    def test_route_constant(self):
+        self.assertEqual(LIVE_RENDER_ROUTE, "/api/llll/live")
+
+    def test_basic_fields(self):
+        payload = build_live_render_payload(
+            self.dm, _build_live_archive(), now=_LIVE_NOW
+        )
+
+        self.assertEqual(payload["schema_version"], "1")
+        self.assertEqual(payload["kind"], "llll.live")
+        self.assertNotIn("assets", payload)
+
+        live = payload["data"]["live"]
+        self.assertEqual(live["id"], "arch-1")
+        self.assertEqual(live["title"], "テスト配信")
+        self.assertEqual(live["live_type"], 3)
+        self.assertNotIn("live_type_label", live)
+        self.assertEqual(live["status"], "closed")
+        self.assertEqual(live["start_time"], _local_time_text("2026-04-16T12:00:00Z"))
+        self.assertEqual(live["end_time"], _local_time_text("2026-04-16T13:00:00Z"))
+        self.assertEqual(live["duration_text"], "63分00秒")
+        self.assertEqual(live["color"], "#f8b500")
+        self.assertNotIn("orientation", live)
+        self.assertNotIn("location", live)
+        self.assertNotIn("description", live)
+
+        self.assertEqual(
+            payload["data"]["after"],
+            {
+                "has_extra": True,
+                "is_started": False,
+                "has_admission": True,
+                "star_threshold": 500,
+                "earned_star": 120,
+            },
+        )
+        self.assertNotIn("stats", payload["data"])
+
+        characters = payload["data"]["characters"]
+        self.assertEqual(
+            characters,
+            [
+                {
+                    "id": 1031,
+                    "name": "日野下花帆",
+                    "icon": {"type": "chara_icon", "id": "1031"},
+                    "color": "#f8b500",
+                },
+                {
+                    "id": 1032,
+                    "name": "村野さやか",
+                    "icon": {"type": "chara_icon", "id": "1032"},
+                    "color": "#5383c3",
+                },
+            ],
+        )
+
+    def test_status_live_and_upcoming(self):
+        airing = _build_live_archive(
+            end_time="2999-01-01T00:00:00Z", total_playing_time_second=0
+        )
+        payload = build_live_render_payload(self.dm, airing, now=_LIVE_NOW)
+        self.assertEqual(payload["data"]["live"]["status"], "live")
+        # 2999 哨兵不算结束时间
+        self.assertNotIn("end_time", payload["data"]["live"])
+
+        # 无结束时间的归档条目，已有总时长即视为完结
+        archived = _build_live_archive(end_time="2999-01-01T00:00:00Z")
+        payload = build_live_render_payload(self.dm, archived, now=_LIVE_NOW)
+        self.assertEqual(payload["data"]["live"]["status"], "closed")
+
+        future = _build_live_archive(
+            live_start_time="2026-06-01T12:00:00Z",
+            end_time="2999-01-01T00:00:00Z",
+        )
+        payload = build_live_render_payload(self.dm, future, now=_LIVE_NOW)
+        self.assertEqual(payload["data"]["live"]["status"], "upcoming")
+
+    def test_id_fallback_and_optional_fields(self):
+        archive = _build_live_archive(
+            archives_id="",
+            total_playing_time_second=0,
+            character_list=[],
+        )
+        payload = build_live_render_payload(self.dm, archive, now=_LIVE_NOW)
+        live = payload["data"]["live"]
+        self.assertEqual(live["id"], "live-1")
+        self.assertNotIn("duration_text", live)
+        self.assertNotIn("color", live)
+        self.assertEqual(payload["data"]["characters"], [])
+
+    def test_spoiler_gating_and_orientation(self):
+        enter_detail = {"is_horizontal": True, "live_location_id": 5}
+        payload = build_live_render_payload(
+            self.dm,
+            _build_live_archive(),
+            enter_detail=enter_detail,
+            show_spoiler=False,
+            now=_LIVE_NOW,
+        )
+        live = payload["data"]["live"]
+        self.assertEqual(live["orientation"], "横画面")
+        self.assertEqual(live["location"], LIVE_SPOILER_HIDDEN_TEXT)
+
+        payload = build_live_render_payload(
+            self.dm,
+            _build_live_archive(),
+            enter_detail=enter_detail,
+            show_spoiler=True,
+            now=_LIVE_NOW,
+        )
+        self.assertEqual(payload["data"]["live"]["location"], "八重咲ステージ2603")
+
+        payload = build_live_render_payload(
+            self.dm,
+            _build_live_archive(),
+            enter_detail={"is_horizontal": False, "live_location_id": 99},
+            show_spoiler=True,
+            now=_LIVE_NOW,
+        )
+        live = payload["data"]["live"]
+        self.assertEqual(live["orientation"], "縦画面")
+        self.assertEqual(live["location"], "地点ID: 99")
+
+        payload = build_live_render_payload(
+            self.dm,
+            _build_live_archive(),
+            enter_detail={},
+            show_spoiler=True,
+            now=_LIVE_NOW,
+        )
+        live = payload["data"]["live"]
+        self.assertNotIn("orientation", live)
+        self.assertEqual(live["location"], "不明")
+
+    def test_enter_detail_characters_take_priority(self):
+        enter_detail = {
+            "characters": [
+                {"character_id": 1032},
+                {"character_id": 1032},
+                {"character_id": "bad"},
+                {"character_id": 9999},
+            ]
+        }
+        payload = build_live_render_payload(
+            self.dm,
+            _build_live_archive(),
+            enter_detail=enter_detail,
+            now=_LIVE_NOW,
+        )
+        characters = payload["data"]["characters"]
+        self.assertEqual([c["id"] for c in characters], [1032, 9999])
+        # 未知角色名回退 ID 文本，主题色缺失时省略
+        self.assertEqual(characters[1]["name"], "9999")
+        self.assertNotIn("color", characters[1])
+        self.assertEqual(payload["data"]["live"]["color"], "#5383c3")
+
+    def test_gift_point_cover_and_description(self):
+        payload = build_live_render_payload(
+            self.dm,
+            _build_live_archive(),
+            description="出演者のみなさん",
+            cover_id="a" * 64,
+            gift_point=1359325800,
+            now=_LIVE_NOW,
+        )
+        self.assertEqual(payload["data"]["stats"], {"gift_point": 1359325800})
+        self.assertEqual(
+            payload["assets"]["cover"],
+            {"type": "live_cover", "id": "a" * 64},
+        )
+        self.assertEqual(payload["data"]["live"]["description"], "出演者のみなさん")
+
+        # 本地占位「不明」不进 payload
+        payload = build_live_render_payload(
+            self.dm, _build_live_archive(), description="不明", now=_LIVE_NOW
+        )
+        self.assertNotIn("description", payload["data"]["live"])
+
+    def test_invalid_entries_raise(self):
+        with self.assertRaises(ValueError):
+            build_live_render_payload(
+                self.dm, _build_live_archive(name=""), now=_LIVE_NOW
+            )
+        with self.assertRaises(ValueError):
+            build_live_render_payload(
+                self.dm,
+                _build_live_archive(archives_id="", live_id=""),
+                now=_LIVE_NOW,
+            )
+        with self.assertRaises(ValueError):
+            build_live_render_payload(
+                self.dm, _build_live_archive(live_type=4), now=_LIVE_NOW
+            )
+
+    def test_format_live_duration(self):
+        self.assertEqual(format_live_duration(2366), "39分26秒")
+        self.assertEqual(format_live_duration("3780"), "63分00秒")
+        self.assertIsNone(format_live_duration(0))
+        self.assertIsNone(format_live_duration(None))
+        self.assertIsNone(format_live_duration("abc"))
 
 
 if __name__ == "__main__":

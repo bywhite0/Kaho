@@ -1,8 +1,13 @@
-from nonebot import on_command
+from nonebot import logger, on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
 
-from src.core.services.with_live_image import generate_with_live_detail_image
+from src.core.services.draw_api import get_draw_api_service
+from src.core.services.draw_payloads import LIVE_RENDER_ROUTE
+from src.core.services.with_live_image import (
+    build_with_live_detail_render_payload,
+    generate_with_live_detail_image,
+)
 
 live_detail_cmd = on_command("live_detail")
 
@@ -38,14 +43,29 @@ async def _(args: Message = CommandArg()):
         await live_detail_cmd.finish(f"参数错误，请输入正整数序号。\n{HELP_TEXT}")
         return
 
-    try:
-        img_bytes = await generate_with_live_detail_image(
-            index=index,
-            auto_refresh_on_miss=True,
-            show_spoiler=show_spoiler,
-        )
-    except Exception as exc:
-        await live_detail_cmd.finish(f"生成直播详情图失败: {exc}")
-        return
+    img_bytes = None
+    draw_api = get_draw_api_service()
+    # Kozue 端点为单场详情页；列表页 /live 无端点，维持本地渲染
+    if draw_api.enabled:
+        try:
+            payload = await build_with_live_detail_render_payload(
+                index=index,
+                auto_refresh_on_miss=True,
+                show_spoiler=show_spoiler,
+            )
+            img_bytes = await draw_api.render(LIVE_RENDER_ROUTE, payload)
+        except Exception:
+            logger.exception("绘图服务渲染 live 详情失败，回退本地渲染")
+
+    if img_bytes is None:
+        try:
+            img_bytes = await generate_with_live_detail_image(
+                index=index,
+                auto_refresh_on_miss=True,
+                show_spoiler=show_spoiler,
+            )
+        except Exception as exc:
+            await live_detail_cmd.finish(f"生成直播详情图失败: {exc}")
+            return
 
     await live_detail_cmd.finish(MessageSegment.image(img_bytes))

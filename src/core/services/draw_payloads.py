@@ -2,6 +2,7 @@
 # 只传绘图所需字段与稳定资源引用，不传原始 masterdata。
 
 import re
+from datetime import datetime, timezone
 
 from src.utils.formatters import parse_intro
 
@@ -9,6 +10,9 @@ LIST_RENDER_ROUTE = "/api/llll/list"
 CHARA_RENDER_ROUTE = "/api/llll/chara"
 FIND_RENDER_ROUTE = "/api/llll/find"
 MUSIC_RENDER_ROUTE = "/api/llll/music"
+LIVE_RENDER_ROUTE = "/api/llll/live"
+
+LIVE_SPOILER_HIDDEN_TEXT = "ネタバレ注意（--spoiler で表示）"
 
 # 未实装占位卡（？？？）的 OrderId 哨兵值，不进入画廊
 _PLACEHOLDER_ORDER_ID = 99999999
@@ -519,3 +523,191 @@ def build_music_render_payload(dm, entry) -> dict:
             }
         },
     }
+
+
+def _parse_live_time(value):
+    """ISO 时间解析；空值与 2999 占位（未定）返回 None。"""
+    text = str(value or "").strip()
+    if not text or text.startswith("2999"):
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _format_live_time(value):
+    parsed = _parse_live_time(value)
+    if parsed is None:
+        return None
+    return parsed.astimezone().strftime("%Y/%m/%d %H:%M")
+
+
+def _live_status(archive, now) -> str:
+    start = _parse_live_time(archive.get("live_start_time") or archive.get("start_time"))
+    close = _parse_live_time(
+        archive.get("close_time")
+        or archive.get("live_end_time")
+        or archive.get("end_time")
+    )
+    if close is not None and now >= close:
+        return "closed"
+    if start is None or now < start:
+        return "upcoming"
+    # 归档条目常缺结束时间（2999 哨兵），已有总时长即代表配信完结
+    if _non_negative_int(archive.get("total_playing_time_second")) > 0:
+        return "closed"
+    return "live"
+
+
+def format_live_duration(seconds_value):
+    """秒数时长格式化为「m分ss秒」，非正数或无法解析时返回 None。"""
+    try:
+        total = int(seconds_value)
+    except (TypeError, ValueError):
+        return None
+    if total <= 0:
+        return None
+    return f"{total // 60}分{total % 60:02d}秒"
+
+
+def _live_location(dm, enter_detail, show_spoiler) -> str:
+    if not show_spoiler:
+        return LIVE_SPOILER_HIDDEN_TEXT
+    try:
+        location_id = int(enter_detail.get("live_location_id"))
+    except (TypeError, ValueError):
+        return "不明"
+    return dm.get_live_location_label(location_id) or f"地点ID: {location_id}"
+
+
+def _live_characters(dm, archive, enter_detail) -> list:
+    raw = enter_detail.get("characters") if isinstance(enter_detail, dict) else None
+    if not isinstance(raw, list) or not raw:
+        raw = archive.get("character_list")
+    characters = []
+    seen = set()
+    for item in raw or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            cid = int(item.get("character_id"))
+        except (TypeError, ValueError):
+            continue
+        if cid <= 0 or cid in seen:
+            continue
+        seen.add(cid)
+        entry = {
+            "id": cid,
+            "name": dm.get_character_name(cid) or str(cid),
+            "icon": {"type": "chara_icon", "id": str(cid)},
+        }
+        color = dm.get_character_theme_color(cid)
+        if color:
+            entry["color"] = color
+        characters.append(entry)
+    return characters
+
+
+def _non_negative_int(value) -> int:
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def build_live_render_payload(
+    dm,
+    archive,
+    *,
+    description=None,
+    enter_detail=None,
+    show_spoiler=False,
+    cover_id=None,
+    gift_point=None,
+    now=None,
+) -> dict:
+    """构建 llll.live 单场配信渲染 payload。缺 ID/标题或 live_type 未知时抛 ValueError。
+
+    Kozue 端点只认三种 live_type（1 Fes×LIVE / 2 With×MEETS / 3 With×STATION），
+    新类型出现时抛错交由调用方回退本地渲染。orientation/location 取自入场详情
+    （enter_detail），地点沿用 --spoiler 门控；礼物条数/弹幕数暂无数据源，留给
+    服务端默认值。
+    """
+    live_id = str(archive.get("archives_id") or archive.get("live_id") or "").strip()
+    title = str(archive.get("name") or "").strip()
+    if not live_id or not title:
+        raise ValueError("配信条目缺少 ID 或标题，无法构建 live 渲染 payload")
+    live_type = archive.get("live_type")
+    if live_type not in (1, 2, 3):
+        raise ValueError(f"未知 live_type: {live_type!r}，无法构建 live 渲染 payload")
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+    live = {
+        "id": live_id,
+        "title": title,
+        "live_type": live_type,
+        "status": _live_status(archive, now),
+    }
+    start_text = _format_live_time(
+        archive.get("live_start_time") or archive.get("start_time")
+    )
+    if start_text:
+        live["start_time"] = start_text
+    end_text = _format_live_time(
+        archive.get("live_end_time") or archive.get("end_time") or archive.get("close_time")
+    )
+    if end_text:
+        live["end_time"] = end_text
+    duration_text = format_live_duration(archive.get("total_playing_time_second"))
+    if duration_text:
+        live["duration_text"] = duration_text
+
+    if isinstance(enter_detail, dict):
+        is_horizontal = enter_detail.get("is_horizontal")
+        if isinstance(is_horizontal, bool):
+            live["orientation"] = "横画面" if is_horizontal else "縦画面"
+        live["location"] = _live_location(dm, enter_detail, show_spoiler)
+
+    desc_text = str(description or "").strip()
+    # 本地渲染路径用「不明」占位，Kozue 页无简介时直接不画该面板
+    if desc_text and desc_text != "不明":
+        live["description"] = desc_text
+
+    characters = _live_characters(dm, archive, enter_detail)
+    # 主题色取首个带主题色的登场角色，无则交给服务端默认值
+    for character in characters:
+        if character.get("color"):
+            live["color"] = character["color"]
+            break
+
+    data = {
+        "live": live,
+        "after": {
+            "has_extra": bool(archive.get("has_extra")),
+            "is_started": bool(archive.get("is_extra_started")),
+            "has_admission": bool(archive.get("has_extra_admission")),
+            "star_threshold": _non_negative_int(
+                archive.get("gift_stars_threshold_for_extra_admission")
+            ),
+            "earned_star": _non_negative_int(archive.get("earned_star_count")),
+        },
+        "characters": characters,
+    }
+    if isinstance(gift_point, int) and gift_point > 0:
+        data["stats"] = {"gift_point": gift_point}
+
+    payload = {
+        "schema_version": "1",
+        "kind": "llll.live",
+        "locale": "zh-CN",
+        "theme": "light",
+        "data": data,
+    }
+    if cover_id:
+        payload["assets"] = {"cover": {"type": "live_cover", "id": cover_id}}
+    return payload
