@@ -8,6 +8,7 @@ from src.utils.formatters import parse_intro
 LIST_RENDER_ROUTE = "/api/llll/list"
 CHARA_RENDER_ROUTE = "/api/llll/chara"
 FIND_RENDER_ROUTE = "/api/llll/find"
+MUSIC_RENDER_ROUTE = "/api/llll/music"
 
 # 未实装占位卡（？？？）的 OrderId 哨兵值，不进入画廊
 _PLACEHOLDER_ORDER_ID = 99999999
@@ -342,4 +343,179 @@ def build_find_render_payload(dm, char_id) -> dict:
             "rarity_summary": rarity_summary,
         },
         "assets": assets,
+    }
+
+
+def format_music_duration(ms_value) -> str:
+    """毫秒时长格式化为 m:ss，无法解析时原样返回字符串。"""
+    try:
+        total_seconds = int(ms_value) // 1000
+    except (ValueError, TypeError):
+        return str(ms_value)
+    return f"{total_seconds // 60}:{total_seconds % 60:02d}"
+
+
+def build_music_mastery_items(dm, music_id) -> list:
+    """构建歌曲熟练度加成列表，payload 与 T2I 共用。"""
+    items = []
+    for mastery in dm.get_music_mastery(music_id) or []:
+        level = mastery.get("Level")
+        if not isinstance(level, int) or level < 1:
+            continue
+        skill_id = mastery.get("MusicMasterySkillsId")
+        skill_name = dm.get_music_mastery_skill_name(skill_id) or f"技能 {skill_id}"
+        bonus = dm.get_mastery_bonus(skill_name, level) or {}
+        if "GainVoltagePt" in bonus:
+            bonus_text = (
+                f"获得电压点 {bonus.get('DemandVoltagePt')}pt 时，"
+                f"追加获得 {bonus.get('GainVoltagePt')}pt"
+            )
+        elif "GainMentalPt" in bonus:
+            bonus_text = (
+                f"Mental 减少 {bonus.get('DemandDamagePt')} 时，"
+                f"回复 {bonus.get('GainMentalPt')}"
+            )
+        elif "LoveRate" in bonus:
+            bonus_text = (
+                f"跳心出现量 +{bonus.get('LoveRate') / 10000}%"
+                if skill_id == 3
+                else f"爱心回收时 LOVE 获得量 +{bonus.get('LoveRate') / 10000}%"
+            )
+        else:
+            bonus_text = "-"
+        items.append({"level": level, "skill_name": skill_name, "bonus_text": bonus_text})
+    return items
+
+
+def _music_performers(dm, entry) -> list:
+    performers = []
+    seen = set()
+
+    def add(raw_id, role):
+        try:
+            cid = int(raw_id)
+        except (TypeError, ValueError):
+            return
+        if cid <= 0 or cid in seen:
+            return
+        seen.add(cid)
+        performers.append(
+            {
+                "id": cid,
+                "name": dm.get_character_name(cid),
+                "role": role,
+                "icon": {"type": "chara_icon", "id": str(cid)},
+            }
+        )
+
+    if entry.get("CenterCharacterId"):
+        add(entry["CenterCharacterId"], "center")
+    for cid in entry.get("SingerCharacterId") or []:
+        add(cid, "singer")
+    for cid in entry.get("SupportCharacterId") or []:
+        add(cid, "support")
+    return performers
+
+
+def _music_chart_payload(chart):
+    """裁剪 get_music_chart_data 结果为分析仪契约的最小字段集。"""
+    if not chart:
+        return None
+    sections = [
+        {
+            "index": s["index"],
+            "percentage": s["percentage"],
+            "beat_count": s["beat_count"],
+            "duration_sec": s["duration_sec"],
+        }
+        for s in chart.get("sections") or []
+        if (s.get("percentage") or 0) > 0
+    ]
+    if not sections:
+        return None
+    moods = [{"x": m["x"], "y": m["y"]} for m in chart.get("moods") or []]
+    return {
+        "total_time_sec": chart.get("total_time_sec") or 0,
+        "sections": sections,
+        "moods": moods,
+    }
+
+
+def build_music_render_payload(dm, entry) -> dict:
+    """构建 llll.music 单曲渲染 payload。条目缺 Id/Title 时抛 ValueError。
+
+    masterdata 无 BPM 字段，bpm 留空待 Wiki 补充；封面资源 id 取 JacketId。
+    """
+    music_id = entry.get("Id")
+    title = str(entry.get("Title") or "").strip()
+    if not music_id or not title:
+        raise ValueError("歌曲条目缺少 Id 或 Title，无法构建 music 渲染 payload")
+
+    music_type = entry.get("MusicType")
+    mood_name = dm.MOODS.get(music_type) if music_type is not None else None
+    song_type_label = dm.get_song_type_label(entry.get("SongType"))
+    generations_id = entry.get("GenerationsId")
+    play_time = entry.get("PlayTime")
+
+    music = {
+        "id": music_id,
+        "title": title,
+        "title_furigana": entry.get("TitleFurigana") or None,
+        "description": entry.get("Description") or None,
+        "generation_label": f"{generations_id}期" if generations_id else None,
+        "unit": dm.unit_names.get(entry.get("UnitId")),
+        "song_type_label": song_type_label,
+        "mood_name": mood_name,
+    }
+    if play_time:
+        music["duration_text"] = format_music_duration(play_time)
+    center_id = entry.get("CenterCharacterId")
+    # 主题色取中心角色 ThemeColor，无中心或无主题色时交给服务端默认值
+    color = dm.get_character_theme_color(center_id) if center_id else None
+    if color:
+        music["color"] = color
+
+    info = []
+
+    def add_info(label, value):
+        text = str(value).strip() if value is not None else ""
+        if text:
+            info.append({"label": label, "value": text})
+
+    add_info("歌曲类型", song_type_label)
+    add_info("属性", mood_name)
+    if play_time:
+        add_info("时长", f"{music['duration_text']} ({play_time}ms)")
+    add_info("AP 上限", entry.get("MaxAp"))
+    fever = entry.get("FeverSectionNo")
+    if fever:
+        add_info("Fever 区段", f"第 {fever} 区段")
+    add_info("解锁条件", entry.get("ReleaseConditionText"))
+    if center_id:
+        add_info("中心角色", dm.get_character_name(center_id))
+
+    data = {
+        "music": music,
+        "info": info,
+        "performers": _music_performers(dm, entry),
+        "mastery": build_music_mastery_items(dm, music_id),
+    }
+    chart = _music_chart_payload(dm.get_music_chart_data(music_id))
+    if chart:
+        data["chart"] = chart
+        if isinstance(fever, int) and fever >= 1:
+            data["fever_section"] = fever
+
+    return {
+        "schema_version": "1",
+        "kind": "llll.music",
+        "locale": "zh-CN",
+        "theme": "light",
+        "data": data,
+        "assets": {
+            "jacket": {
+                "type": "music_jacket",
+                "id": str(entry.get("JacketId") or music_id),
+            }
+        },
     }

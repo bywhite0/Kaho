@@ -5,9 +5,12 @@ from src.core.services.draw_payloads import (
     CHARA_RENDER_ROUTE,
     FIND_RENDER_ROUTE,
     LIST_RENDER_ROUTE,
+    MUSIC_RENDER_ROUTE,
     build_chara_render_payload,
     build_find_render_payload,
     build_list_render_payload,
+    build_music_mastery_items,
+    build_music_render_payload,
 )
 
 
@@ -604,6 +607,198 @@ class BuildFindRenderPayloadTest(unittest.TestCase):
         self.assertNotIn("unit_logo", payload["assets"])
         # 系列内只有 0 形态 → 单形态，不带 form
         self.assertNotIn("form", payload["data"]["cards"][0])
+
+
+class _FakeMusicDM:
+    MOODS: ClassVar[dict] = {1: "Happy", 2: "Neutral", 3: "Mellow"}
+
+    def __init__(self, chart=None, mastery=None, bonus=None, color="#f8b500"):
+        self.unit_names = {100: "蓮ノ空女学院スクールアイドルクラブ"}
+        self._chart = chart
+        self._mastery = mastery or []
+        self._bonus = bonus or {}
+        self._color = color
+
+    def get_song_type_label(self, song_type):
+        return "オリジナル曲" if song_type == 1 else None
+
+    def get_character_name(self, char_id):
+        return {1031: "日野下花帆", 1021: "乙宗梢", 1023: "藤島慈"}.get(
+            char_id, f"角色{char_id}"
+        )
+
+    def get_character_theme_color(self, char_id):
+        return self._color
+
+    def get_music_chart_data(self, music_id):
+        return self._chart
+
+    def get_music_mastery(self, music_id):
+        return self._mastery
+
+    def get_music_mastery_skill_name(self, skill_id):
+        return "LOVEボーナス"
+
+    def get_mastery_bonus(self, skill_name, level):
+        return self._bonus
+
+
+_MUSIC_ENTRY = {
+    "Id": 103101,
+    "Title": "Dream Believers（4人Ver.）",
+    "TitleFurigana": "どりーむびりーばーず",
+    "Description": "全体曲",
+    "GenerationsId": 103,
+    "UnitId": 100,
+    "SongType": 1,
+    "MusicType": 1,
+    "PlayTime": 139259,
+    "MaxAp": 10,
+    "FeverSectionNo": 4,
+    "ReleaseConditionText": "初めから習得",
+    "CenterCharacterId": 1031,
+    "SingerCharacterId": [1031, 1021],
+    "SupportCharacterId": [1023, 0],
+    "JacketId": 103101,
+}
+
+
+class BuildMusicRenderPayloadTest(unittest.TestCase):
+    def _chart(self):
+        return {
+            "total_time": 139259,
+            "total_time_sec": 139.3,
+            "total_beats": 85,
+            "sections": [
+                {
+                    "index": 1,
+                    "start_time": 0,
+                    "end_time": 28148,
+                    "duration": 28148,
+                    "duration_sec": 28.1,
+                    "beat_count": 17,
+                    "percentage": 20.2,
+                },
+                {
+                    "index": 2,
+                    "start_time": 28148,
+                    "end_time": 28148,
+                    "duration": 0,
+                    "duration_sec": 0.0,
+                    "beat_count": 0,
+                    "percentage": 0,
+                },
+            ],
+            "moods": [{"x": 0.0, "y": 50.0, "val": 0}, {"x": 100.0, "y": 10.0, "val": 100}],
+        }
+
+    def test_route_constant(self):
+        self.assertEqual(MUSIC_RENDER_ROUTE, "/api/llll/music")
+
+    def test_happy_path_full_fields(self):
+        payload = build_music_render_payload(_FakeMusicDM(chart=self._chart()), _MUSIC_ENTRY)
+
+        self.assertEqual(payload["schema_version"], "1")
+        self.assertEqual(payload["kind"], "llll.music")
+
+        music = payload["data"]["music"]
+        self.assertEqual(music["id"], 103101)
+        self.assertEqual(music["title"], "Dream Believers（4人Ver.）")
+        self.assertEqual(music["title_furigana"], "どりーむびりーばーず")
+        self.assertEqual(music["generation_label"], "103期")
+        self.assertEqual(music["unit"], "蓮ノ空女学院スクールアイドルクラブ")
+        self.assertEqual(music["song_type_label"], "オリジナル曲")
+        self.assertEqual(music["mood_name"], "Happy")
+        self.assertEqual(music["duration_text"], "2:19")
+        self.assertEqual(music["color"], "#f8b500")
+        self.assertNotIn("bpm", music)
+
+        self.assertEqual(
+            payload["data"]["info"],
+            [
+                {"label": "歌曲类型", "value": "オリジナル曲"},
+                {"label": "属性", "value": "Happy"},
+                {"label": "时长", "value": "2:19 (139259ms)"},
+                {"label": "AP 上限", "value": "10"},
+                {"label": "Fever 区段", "value": "第 4 区段"},
+                {"label": "解锁条件", "value": "初めから習得"},
+                {"label": "中心角色", "value": "日野下花帆"},
+            ],
+        )
+
+        # 中心角色排最前且不在 singer 中重复；SupportCharacterId 的 0 被过滤
+        performers = payload["data"]["performers"]
+        self.assertEqual(
+            [(p["id"], p["role"]) for p in performers],
+            [(1031, "center"), (1021, "singer"), (1023, "support")],
+        )
+        self.assertEqual(performers[0]["icon"], {"type": "chara_icon", "id": "1031"})
+
+        # 零占比区段被过滤，moods 只保留 x/y
+        chart = payload["data"]["chart"]
+        self.assertEqual(chart["total_time_sec"], 139.3)
+        self.assertEqual(
+            chart["sections"],
+            [{"index": 1, "percentage": 20.2, "beat_count": 17, "duration_sec": 28.1}],
+        )
+        self.assertEqual(chart["moods"], [{"x": 0.0, "y": 50.0}, {"x": 100.0, "y": 10.0}])
+        self.assertEqual(payload["data"]["fever_section"], 4)
+
+        self.assertEqual(
+            payload["assets"]["jacket"], {"type": "music_jacket", "id": "103101"}
+        )
+
+    def test_no_chart_omits_chart_and_fever(self):
+        payload = build_music_render_payload(_FakeMusicDM(), _MUSIC_ENTRY)
+        self.assertNotIn("chart", payload["data"])
+        self.assertNotIn("fever_section", payload["data"])
+
+    def test_all_zero_sections_omit_chart(self):
+        chart = self._chart()
+        for s in chart["sections"]:
+            s["percentage"] = 0
+        payload = build_music_render_payload(_FakeMusicDM(chart=chart), _MUSIC_ENTRY)
+        self.assertNotIn("chart", payload["data"])
+
+    def test_missing_title_raises(self):
+        with self.assertRaises(ValueError):
+            build_music_render_payload(_FakeMusicDM(), {"Id": 1, "Title": " "})
+
+    def test_minimal_entry(self):
+        dm = _FakeMusicDM(color=None)
+        payload = build_music_render_payload(dm, {"Id": 999901, "Title": "テスト"})
+        music = payload["data"]["music"]
+        self.assertIsNone(music["title_furigana"])
+        self.assertIsNone(music["generation_label"])
+        self.assertIsNone(music["unit"])
+        self.assertNotIn("color", music)
+        self.assertNotIn("duration_text", music)
+        self.assertEqual(payload["data"]["info"], [])
+        self.assertEqual(payload["data"]["performers"], [])
+        # 无 JacketId 时封面回退歌曲 Id
+        self.assertEqual(
+            payload["assets"]["jacket"], {"type": "music_jacket", "id": "999901"}
+        )
+
+    def test_mastery_love_rate_bonus(self):
+        dm = _FakeMusicDM(
+            mastery=[
+                {"Level": 10, "MusicMasterySkillsId": 1},
+                {"Level": None, "MusicMasterySkillsId": 1},
+            ],
+            bonus={"LoveRate": 17500},
+        )
+        items = build_music_mastery_items(dm, 103101)
+        self.assertEqual(
+            items,
+            [
+                {
+                    "level": 10,
+                    "skill_name": "LOVEボーナス",
+                    "bonus_text": "爱心回收时 LOVE 获得量 +1.75%",
+                }
+            ],
+        )
 
 
 if __name__ == "__main__":

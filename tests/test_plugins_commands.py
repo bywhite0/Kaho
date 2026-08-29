@@ -321,11 +321,14 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
             return self.dm
 
         fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService(enabled=False)
         matcher = _DummyMatcher()
         query = str(self.meta.get("first_music_title") or "")[:4]
         with patch.object(music_module, "music_cmd", matcher), patch.object(
             music_module, "get_dm_instance", fake_get_dm
-        ), patch.object(music_module, "get_t2i_service", lambda: fake_t2i):
+        ), patch.object(music_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            music_module, "get_draw_api_service", lambda: fake_draw
+        ):
             with self.assertRaises(_FinishCalled) as ctx:
                 await music_module._(_DummyMessage(query))
 
@@ -343,6 +346,96 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first_music["title_len"], len(first_music["title"]))
         self.assertIsInstance(ctx.exception.payload, MessageSegment)
         self.assertEqual(ctx.exception.payload.type, "image")
+
+    async def test_music_draw_api_success_single_result(self):
+        import src.plugins.llll.music as music_module
+        from src.core.services.draw_payloads import MUSIC_RENDER_ROUTE
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService()
+        matcher = _DummyMatcher()
+        # 长数字查询按 Id 精确命中，保证单结果
+        query = str(self.meta["first_music_id"])
+        with patch.object(music_module, "music_cmd", matcher), patch.object(
+            music_module, "get_dm_instance", fake_get_dm
+        ), patch.object(music_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            music_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await music_module._(_DummyMessage(query))
+
+        self.assertEqual(fake_draw.route, MUSIC_RENDER_ROUTE)
+        self.assertEqual(fake_draw.payload["kind"], "llll.music")
+        self.assertEqual(
+            fake_draw.payload["data"]["music"]["id"], self.meta["first_music_id"]
+        )
+        # 绘图服务成功时不再走 T2I
+        self.assertIsNone(fake_t2i.template_name)
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+
+    async def test_music_draw_api_failure_falls_back_to_t2i(self):
+        import src.plugins.llll.music as music_module
+        from src.core.services.draw_api import DrawApiError
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService(error=DrawApiError("boom"))
+        matcher = _DummyMatcher()
+        query = str(self.meta["first_music_id"])
+        with patch.object(music_module, "music_cmd", matcher), patch.object(
+            music_module, "get_dm_instance", fake_get_dm
+        ), patch.object(music_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            music_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await music_module._(_DummyMessage(query))
+
+        self.assertEqual(fake_t2i.template_name, "music.html")
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+
+    async def test_music_multi_result_skips_draw_api(self):
+        import src.plugins.llll.music as music_module
+
+        entry = self.dm.search_musics(str(self.meta["first_music_id"]))[0]
+
+        class _MultiDM:
+            def __init__(self, dm, results):
+                self._dm = dm
+                self._results = results
+
+            def __getattr__(self, name):
+                return getattr(self._dm, name)
+
+            def search_musics(self, query, limit=None):
+                return list(self._results)
+
+        multi_dm = _MultiDM(self.dm, [entry, entry])
+
+        async def fake_get_dm():
+            return multi_dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService()
+        matcher = _DummyMatcher()
+        with patch.object(music_module, "music_cmd", matcher), patch.object(
+            music_module, "get_dm_instance", fake_get_dm
+        ), patch.object(music_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            music_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled):
+                await music_module._(_DummyMessage("多结果"))
+
+        # 多结果不请求绘图服务，直接走 T2I 合页
+        self.assertIsNone(fake_draw.route)
+        self.assertEqual(fake_t2i.template_name, "music.html")
+        self.assertEqual(len(fake_t2i.payload["musics"]), 2)
 
     async def test_comic_success_generate_image(self):
         import src.plugins.llll.comic as comic_module

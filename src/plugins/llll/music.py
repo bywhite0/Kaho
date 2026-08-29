@@ -1,7 +1,14 @@
-from nonebot import on_command
+from nonebot import logger, on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
 
+from src.core.services.draw_api import get_draw_api_service
+from src.core.services.draw_payloads import (
+    MUSIC_RENDER_ROUTE,
+    build_music_mastery_items,
+    build_music_render_payload,
+    format_music_duration,
+)
 from src.core.services.t2i import get_t2i_service
 
 from ._common import get_dm_instance
@@ -95,13 +102,7 @@ def _get_stage_info(
 
 
 def _format_duration(ms_value):
-    try:
-        total_seconds = int(ms_value) // 1000
-        minutes = total_seconds // 60
-        seconds = total_seconds % 60
-        return f"{minutes}:{seconds:02d}"
-    except (ValueError, TypeError):
-        return str(ms_value)
+    return format_music_duration(ms_value)
 
 
 def _get_title_size_class(title):
@@ -146,6 +147,25 @@ async def _(args: Message = CommandArg()):
         await music_cmd.finish("未找到。")
         return
 
+    img_bytes = None
+    draw_api = get_draw_api_service()
+    # Kozue 端点为单曲详情页，多结果合页暂保留 T2I
+    if len(results) == 1 and draw_api.enabled:
+        try:
+            payload = build_music_render_payload(dm, results[0])
+            img_bytes = await draw_api.render(MUSIC_RENDER_ROUTE, payload)
+        except Exception:
+            logger.exception("绘图服务渲染 music 失败，回退 T2I")
+
+    if img_bytes is None:
+        img_bytes = await _render_t2i(dm, query, results, is_limited)
+        if img_bytes is None:
+            return
+
+    await music_cmd.finish(MessageSegment.image(img_bytes))
+
+
+async def _render_t2i(dm, query, results, is_limited):
     musics_data = []
     for entry in results:
         music_id = entry.get("Id")
@@ -245,35 +265,9 @@ async def _(args: Message = CommandArg()):
             )
 
         # Mastery
-        mastery_levels = dm.get_music_mastery(music_id)
+        mastery_levels = build_music_mastery_items(dm, music_id)
         if mastery_levels:
-            music_data["mastery_levels"] = []
-            for mastery in mastery_levels:
-                level = mastery.get("Level")
-                skill_id = mastery.get("MusicMasterySkillsId")
-                skill_name = (
-                    dm.get_music_mastery_skill_name(skill_id) or f"技能 {skill_id}"
-                )
-                bonus = dm.get_mastery_bonus(skill_name, level) or {}
-                if "GainVoltagePt" in bonus:
-                    bonus_text = (
-                        f"获得电压点 {bonus.get('DemandVoltagePt')}pt 时，"
-                        f"追加获得 {bonus.get('GainVoltagePt')}pt"
-                    )
-                elif "GainMentalPt" in bonus:
-                    bonus_text = f"Mental 减少 {bonus.get('DemandDamagePt')} 时，回复 {bonus.get('GainMentalPt')}"
-                elif "LoveRate" in bonus:
-                    bonus_text = (
-                        f"跳心出现量 +{bonus.get('LoveRate') / 10000}%"
-                        if skill_id == 3
-                        else f"爱心回收时 LOVE 获得量 +{bonus.get('LoveRate') / 10000}%"
-                    )
-                else:
-                    bonus_text = "-"
-
-                music_data["mastery_levels"].append(
-                    {"level": level, "skill_name": skill_name, "bonus_text": bonus_text}
-                )
+            music_data["mastery_levels"] = mastery_levels
 
         # Chart Data
         chart_data = dm.get_music_chart_data(music_id)
@@ -283,7 +277,7 @@ async def _(args: Message = CommandArg()):
         musics_data.append(music_data)
 
     try:
-        img_bytes = await get_t2i_service().generate_image(
+        return await get_t2i_service().generate_image(
             "music.html",
             {
                 "query": query,
@@ -294,6 +288,4 @@ async def _(args: Message = CommandArg()):
         )
     except Exception as e:
         await music_cmd.finish(f"生成图片失败: {e}")
-        return
-
-    await music_cmd.finish(MessageSegment.image(img_bytes))
+        return None
