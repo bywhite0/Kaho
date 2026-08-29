@@ -2,15 +2,16 @@
 # 只传绘图所需字段与稳定资源引用，不传原始 masterdata。
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
-from src.utils.formatters import parse_intro
+from src.utils.formatters import build_skill_view, parse_intro
 
 LIST_RENDER_ROUTE = "/api/llll/list"
 CHARA_RENDER_ROUTE = "/api/llll/chara"
 FIND_RENDER_ROUTE = "/api/llll/find"
 MUSIC_RENDER_ROUTE = "/api/llll/music"
 LIVE_RENDER_ROUTE = "/api/llll/live"
+CARD_RENDER_ROUTE = "/api/llll/card"
 
 LIVE_SPOILER_HIDDEN_TEXT = "ネタバレ注意（--spoiler で表示）"
 
@@ -710,4 +711,295 @@ def build_live_render_payload(
     }
     if cover_id:
         payload["assets"] = {"cover": {"type": "live_cover", "id": cover_id}}
+    return payload
+
+
+def format_release_time_utc8(raw_time):
+    """ISO 时间格式化为 UTC+8 文本；空值返回 None，无法解析时原样返回。"""
+    text = str(raw_time or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone(timedelta(hours=8))).strftime(
+        "%Y-%m-%d %H:%M:%S (UTC+8)"
+    )
+
+
+def build_card_skill_material_items(dm, series_id) -> list:
+    """技能升级材料（R3 类别，滤除技能书），payload 与 T2I 共用。"""
+    categories = {}
+    for entry in dm.get_card_skill_levelup_materials(series_id) or []:
+        for mat in entry.get("materials") or []:
+            name = str(mat.get("name") or "").strip()
+            if "技能書" in name or "技能书" in name:
+                continue
+            if "R3" not in name.upper():
+                continue
+            item_id = mat.get("id")
+            if item_id is None or item_id in categories:
+                continue
+            categories[item_id] = {
+                "id": item_id,
+                "name": name,
+                "icon": {"type": "icon_item", "id": str(item_id)},
+            }
+    return list(categories.values())
+
+
+def _card_view_to_block(view, icon_id=None):
+    """build_skill_view 输出 → 契约 CardSkillBlock；空视图返回 None。"""
+    if not view or not str(view.get("name") or "").strip():
+        return None
+    block = {"name": str(view["name"]).strip()}
+    title = str(view.get("title_prefix") or "").strip().rstrip(":：").strip()
+    if title:
+        block["title"] = f"{title}:"
+    if view.get("cost"):
+        block["cost_text"] = str(view["cost"]).strip()
+    if view.get("type"):
+        block["type_label"] = str(view["type"]).strip()
+    if view.get("template"):
+        block["template"] = str(view["template"]).strip()
+    ranges = [
+        {"label": r["label"], "value": r["value"]}
+        for r in view.get("ranges") or []
+        if r.get("label") and r.get("value")
+    ]
+    if ranges:
+        block["ranges"] = ranges
+    if icon_id:
+        block["icon"] = {"type": "icon_skill", "id": str(icon_id)}
+    token_cards = []
+    for token in view.get("token_cards") or []:
+        entry = {}
+        if token.get("resource_id"):
+            entry["thumb"] = {
+                "type": "image_card_middle_vertical",
+                "id": str(token["resource_id"]),
+            }
+        skill = _card_view_to_block(token.get("skill"), token.get("skill_icon_id"))
+        ability = _card_view_to_block(token.get("ability"), token.get("ability_icon_id"))
+        if skill:
+            entry["skill"] = skill
+        if ability:
+            entry["ability"] = ability
+        if entry:
+            token_cards.append(entry)
+    if token_cards:
+        block["token_cards"] = token_cards
+    return block
+
+
+def _card_skill_block(dm, skill_data, title_prefix, cost_str="", show_type=True):
+    view = build_skill_view(dm, skill_data, title_prefix, cost_str=cost_str, show_type=show_type)
+    icon_id = skill_data.get("icon_id") if skill_data else None
+    return _card_view_to_block(view, icon_id)
+
+
+def _card_states(all_cards, limited_type) -> list:
+    """数值表覆盖系列全部形态（形态 2+ 为更高数值档位）；卡面只展示
+    特训前/后两形态，音击联动（202）前后卡面相同只展示 state0。"""
+    all_sorted = sorted(all_cards, key=lambda c: c["Id"])
+    has_state_0 = any(c["Id"] % 10 == 0 for c in all_sorted)
+    showcase_forms = {0, 1} if limited_type != 202 else {0}
+    states = []
+    for entry in all_sorted:
+        form = entry["Id"] % 10
+        if form == 0:
+            label = "特训前"
+        elif form == 1:
+            label = "特训后" if has_state_0 else "仅此形态"
+        else:
+            label = f"形态 {form}"
+        state = {
+            "id": entry["Id"],
+            "label": label,
+            "stats": {
+                "smile_init": entry["InitialSmile"],
+                "smile_max": entry["MaxSmile"],
+                "pure_init": entry["InitialPure"],
+                "pure_max": entry["MaxPure"],
+                "cool_init": entry["InitialCool"],
+                "cool_max": entry["MaxCool"],
+                "mental_init": entry["InitialMental"],
+                "mental_max": entry["MaxMental"],
+                "bp": entry["BeatPoint"],
+            },
+        }
+        if form in showcase_forms:
+            state["full"] = {"type": "image_card_full", "id": str(entry["Id"])}
+        states.append(state)
+    return states
+
+
+def _card_assets(base, series_id, all_cards, exports_dir) -> dict:
+    """铭牌/组卡 SD/贴纸按 exports 文件真实存在挂载；DR（Rarity 8）无铭牌资源。"""
+    assets = {}
+    if exports_dir is None:
+        return assets
+    char_id = base.get("CharactersId")
+    if base.get("Rarity") != 8 and char_id is not None:
+        nameplate_id = f"{char_id}_{int(base['Rarity']):02d}"
+        nameplate_file = (
+            exports_dir / "images" / "gacha_cardinfo" / f"image_gacha_cardinfo_{nameplate_id}.png"
+        )
+        if nameplate_file.exists():
+            assets["nameplate"] = {"type": "image_gacha_cardinfo", "id": nameplate_id}
+    deck_frame_file = (
+        exports_dir / "images" / "deck_frame_chara" / f"image_deck_frame_chara_{series_id}.png"
+    )
+    if deck_frame_file.exists():
+        assets["deck_frame"] = {"type": "image_deck_frame_chara", "id": str(series_id)}
+    stickers = []
+    for entry in all_cards:
+        sticker_file = exports_dir / "images" / "sticker" / f"image_sticker_{entry['Id']}.png"
+        if sticker_file.exists():
+            stickers.append({"type": "image_sticker", "id": str(entry["Id"])})
+    if stickers:
+        assets["stickers"] = stickers
+    return assets
+
+
+def build_card_render_payload(dm, series_id, exports_dir=None) -> dict:
+    """构建 llll.card 卡牌详情渲染 payload。系列不存在时抛 ValueError。
+
+    exports_dir 用于铭牌/组卡 SD/贴纸的文件存在性检查，缺省时省略这些资源。
+    """
+    all_cards = dm.get_card_series_data(series_id)
+    if not all_cards:
+        raise ValueError(f"未找到卡牌系列 {series_id}，无法构建 card 渲染 payload")
+    base = all_cards[0]
+    char_id = base["CharactersId"]
+    series_meta = dm.get_card_series_meta(series_id)
+    limited_type = series_meta.get("LimitedType")
+    limited_label = dm.LIMITED_TYPES.get(
+        limited_type, f"Type {limited_type}" if limited_type is not None else None
+    )
+
+    gachas_info = dm.get_gachas_for_series(series_id)
+    character_entry = dm.get_character(char_id) or {}
+    last_name = str(character_entry.get("NameLast") or "").strip()
+    first_name = str(character_entry.get("NameFirst") or "").strip()
+
+    card = {
+        "series_id": series_id,
+        "name": base["Name"],
+        "character_id": char_id,
+        "character_name": dm.get_character_name(char_id),
+        "rarity": dm.get_rarity_name(base["Rarity"]),
+        "limited_label": limited_label,
+        "style_name": dm.STYLES.get(base["Style"]),
+        "mood_name": dm.MOODS.get(base["Mood"]),
+        "gachas": [g["name"] for g in gachas_info],
+    }
+    if last_name and first_name:
+        card["character_name_jp"] = f"{last_name}　{first_name}"
+    if gachas_info:
+        release = format_release_time_utc8(gachas_info[0].get("start_time"))
+        if release:
+            card["release_date"] = release
+    color = dm.get_character_theme_color(char_id)
+    if color:
+        card["color"] = color
+
+    cost_s = dm.get_cost_transition(series_id, "SkillSeriesId", dm.get_card_skills_map(), "SkillCost")
+    cost_sa = dm.get_cost_transition(
+        series_id, "SpecialAppealSeriesId", dm.get_card_skills_map(), "SkillCost"
+    )
+    cost_r = dm.get_cost_transition(
+        series_id, "RhythmGameSkillSeriesId", dm.get_rhythm_skills_map(), "ConsumeAP"
+    )
+    sis_skills = [
+        b
+        for b in (
+            _card_skill_block(
+                dm,
+                dm.get_all_skills_data(base.get("SkillSeriesId")),
+                "技能: ",
+                cost_str=f"（AP 消耗: {cost_s}）",
+            ),
+            _card_skill_block(
+                dm,
+                dm.get_all_skills_data(base.get("SpecialAppealSeriesId")),
+                "特殊演出: ",
+                cost_str=f"（AP 消耗: {cost_sa}）",
+            ),
+            _card_skill_block(dm, dm.get_all_skills_data(base.get("AttributeId")), "特性: "),
+        )
+        if b
+    ]
+    rhythm_skills = [
+        b
+        for b in (
+            _card_skill_block(
+                dm,
+                dm.get_all_rhythm_skills_data(base.get("RhythmGameSkillSeriesId")),
+                "技能: ",
+                cost_str=f"（AP 消耗: {cost_r}）",
+                show_type=False,
+            ),
+            _card_skill_block(
+                dm,
+                dm.get_all_center_skills_data(base.get("CenterSkillSeriesId")),
+                "Center 技能: ",
+                show_type=False,
+            ),
+        )
+        if b
+    ]
+
+    center_attributes = []
+    c_attr_id = base.get("CenterAttributeSeriesId")
+    if c_attr_id:
+        seen = set()
+        for attr in dm.get_center_attributes_map().get(c_attr_id, []):
+            key = (attr["CenterAttributeName"], attr["Description"])
+            if key in seen:
+                continue
+            seen.add(key)
+            center_attributes.append(
+                {"name": attr["CenterAttributeName"], "description": attr["Description"]}
+            )
+
+    data = {
+        "card": card,
+        "states": _card_states(all_cards, limited_type),
+    }
+    materials = build_card_skill_material_items(dm, series_id)
+    if materials:
+        data["skill_material_groups"] = [{"materials": materials}]
+    if sis_skills:
+        data["sis_skills"] = sis_skills
+    if rhythm_skills:
+        data["rhythm_skills"] = rhythm_skills
+    if center_attributes:
+        data["center_attributes"] = center_attributes
+
+    duet_ids = dm.get_duet_voice_character_ids(series_id)
+    if duet_ids:
+        data["duet_voice"] = [dm.get_character_name(cid) for cid in duet_ids]
+    if base.get("Rarity") in (5, 7, 9) and dm.has_style_movie(series_id):
+        data["style_movies"] = [
+            f"picture_ur_get_{series_id}_in.usm",
+            f"picture_ur_get_{series_id}_loop.usm",
+        ]
+    style_voices = dm.get_style_voice_entries(series_id)
+    if style_voices:
+        data["style_voices"] = [{"name": e["name"], "voice": e["voice"]} for e in style_voices]
+
+    payload = {
+        "schema_version": "1",
+        "kind": "llll.card",
+        "locale": "zh-CN",
+        "theme": "light",
+        "data": data,
+    }
+    assets = _card_assets(base, series_id, all_cards, exports_dir)
+    if assets:
+        payload["assets"] = assets
     return payload

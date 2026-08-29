@@ -210,6 +210,82 @@ class PluginCommandTest(unittest.IsolatedAsyncioTestCase):
                 await card_module._(_DummyMessage("abc"))
         self.assertEqual(ctx.exception.payload, "请输入有效的卡牌ID。")
 
+    async def test_card_success_generate_image(self):
+        import src.plugins.llll.card as card_module
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService(enabled=False)
+        matcher = _DummyMatcher()
+        query = str(self.meta["first_series_id"])
+        with patch.object(card_module, "card_cmd", matcher), patch.object(
+            card_module, "get_dm_instance", fake_get_dm
+        ), patch.object(card_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            card_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await card_module._(_DummyMessage(query))
+
+        self.assertEqual(fake_t2i.template_name, "card.html")
+        self.assertEqual(fake_t2i.payload["series_id"], self.meta["first_series_id"])
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+
+    async def test_card_draw_api_success(self):
+        import src.plugins.llll.card as card_module
+        from src.core.services.draw_payloads import CARD_RENDER_ROUTE
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService()
+        matcher = _DummyMatcher()
+        query = str(self.meta["first_series_id"])
+        with patch.object(card_module, "card_cmd", matcher), patch.object(
+            card_module, "get_dm_instance", fake_get_dm
+        ), patch.object(card_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            card_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await card_module._(_DummyMessage(query))
+
+        self.assertEqual(fake_draw.route, CARD_RENDER_ROUTE)
+        self.assertEqual(fake_draw.payload["kind"], "llll.card")
+        self.assertEqual(
+            fake_draw.payload["data"]["card"]["series_id"], self.meta["first_series_id"]
+        )
+        self.assertGreaterEqual(len(fake_draw.payload["data"]["states"]), 1)
+        # 绘图服务成功时不再走 T2I
+        self.assertIsNone(fake_t2i.template_name)
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+
+    async def test_card_draw_api_failure_falls_back_to_t2i(self):
+        import src.plugins.llll.card as card_module
+        from src.core.services.draw_api import DrawApiError
+
+        async def fake_get_dm():
+            return self.dm
+
+        fake_t2i = _FakeT2IService()
+        fake_draw = _FakeDrawApiService(error=DrawApiError("boom"))
+        matcher = _DummyMatcher()
+        query = str(self.meta["first_series_id"])
+        with patch.object(card_module, "card_cmd", matcher), patch.object(
+            card_module, "get_dm_instance", fake_get_dm
+        ), patch.object(card_module, "get_t2i_service", lambda: fake_t2i), patch.object(
+            card_module, "get_draw_api_service", lambda: fake_draw
+        ):
+            with self.assertRaises(_FinishCalled) as ctx:
+                await card_module._(_DummyMessage(query))
+
+        self.assertEqual(fake_t2i.template_name, "card.html")
+        self.assertIsInstance(ctx.exception.payload, MessageSegment)
+        self.assertEqual(ctx.exception.payload.type, "image")
+
     async def test_chara_success_generate_image(self):
         import src.plugins.llll.chara as chara_module
 

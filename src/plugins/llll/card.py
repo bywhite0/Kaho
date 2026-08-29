@@ -1,48 +1,23 @@
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from nonebot import on_command
+from nonebot import logger, on_command
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.params import CommandArg
 
+from src.core.services.draw_api import get_draw_api_service
+from src.core.services.draw_payloads import (
+    CARD_RENDER_ROUTE,
+    build_card_render_payload,
+    build_card_skill_material_items,
+    format_release_time_utc8,
+)
 from src.core.services.t2i import get_t2i_service
 
 from ._common import build_skill_block, build_state_images, get_dm_instance
 
 card_cmd = on_command("card")
 
-
-def _format_release_time_utc8(raw_time):
-    if raw_time is None:
-        return None
-    text = str(raw_time).strip()
-    if not text:
-        return None
-    normalized = text.replace("Z", "+00:00")
-    try:
-        dt = datetime.fromisoformat(normalized)
-    except ValueError:
-        return text
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    utc8 = timezone(timedelta(hours=8))
-    return dt.astimezone(utc8).strftime("%Y-%m-%d %H:%M:%S (UTC+8)")
-
-
-def _build_skill_material_categories(skill_mats):
-    categories = {}
-    for entry in skill_mats or []:
-        for mat in entry.get("materials") or []:
-            name = str(mat.get("name") or "").strip()
-            if "技能書" in name or "技能书" in name:
-                continue
-            if "R3" not in name.upper():
-                continue
-            item_id = mat.get("id")
-            key = item_id if item_id is not None else name
-            if key not in categories:
-                categories[key] = {"id": item_id, "name": name}
-    return list(categories.values())
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _resolve_sticker_ids(all_cards, project_root):
@@ -77,8 +52,28 @@ async def _(args: Message = CommandArg()):
         await card_cmd.finish("未找到。")
         return
 
+    img_bytes = None
+    draw_api = get_draw_api_service()
+    if draw_api.enabled:
+        try:
+            payload = build_card_render_payload(
+                dm, series_id, exports_dir=_PROJECT_ROOT / "exports"
+            )
+            img_bytes = await draw_api.render(CARD_RENDER_ROUTE, payload)
+        except Exception:
+            logger.exception("绘图服务渲染 card 失败，回退 T2I")
+
+    if img_bytes is None:
+        img_bytes = await _render_t2i(dm, series_id, all_cards)
+        if img_bytes is None:
+            return
+
+    await card_cmd.finish(MessageSegment.image(img_bytes))
+
+
+async def _render_t2i(dm, series_id, all_cards):
     base = all_cards[0]
-    project_root = Path(__file__).resolve().parents[3]
+    project_root = _PROJECT_ROOT
     series_meta = dm.get_card_series_meta(series_id)
     lim_type = dm.LIMITED_TYPES.get(
         series_meta.get("LimitedType"), f"Type {series_meta.get('LimitedType')}"
@@ -87,11 +82,10 @@ async def _(args: Message = CommandArg()):
     gachas_info = dm.get_gachas_for_series(series_id)
     gacha_names = [g["name"] for g in gachas_info]
     release_date = (
-        _format_release_time_utc8(gachas_info[0]["start_time"]) if gachas_info else None
+        format_release_time_utc8(gachas_info[0]["start_time"]) if gachas_info else None
     )
 
-    skill_mats = dm.get_card_skill_levelup_materials(series_id)
-    skill_material_categories = _build_skill_material_categories(skill_mats)
+    skill_material_categories = build_card_skill_material_items(dm, series_id)
 
     data = {
         "series_id": series_id,
@@ -243,9 +237,7 @@ async def _(args: Message = CommandArg()):
         data["state_1_images"] = imgs
 
     try:
-        img_bytes = await get_t2i_service().generate_image("card.html", data)
+        return await get_t2i_service().generate_image("card.html", data)
     except Exception as e:
         await card_cmd.finish(f"生成图片失败: {e}")
-        return
-
-    await card_cmd.finish(MessageSegment.image(img_bytes))
+        return None

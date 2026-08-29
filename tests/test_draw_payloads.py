@@ -1,14 +1,19 @@
+import tempfile
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import ClassVar
 
 from src.core.services.draw_payloads import (
+    CARD_RENDER_ROUTE,
     CHARA_RENDER_ROUTE,
     FIND_RENDER_ROUTE,
     LIST_RENDER_ROUTE,
     LIVE_RENDER_ROUTE,
     LIVE_SPOILER_HIDDEN_TEXT,
     MUSIC_RENDER_ROUTE,
+    build_card_render_payload,
+    build_card_skill_material_items,
     build_chara_render_payload,
     build_find_render_payload,
     build_list_render_payload,
@@ -16,6 +21,7 @@ from src.core.services.draw_payloads import (
     build_music_mastery_items,
     build_music_render_payload,
     format_live_duration,
+    format_release_time_utc8,
 )
 
 
@@ -1055,6 +1061,315 @@ class BuildLiveRenderPayloadTest(unittest.TestCase):
         self.assertIsNone(format_live_duration(0))
         self.assertIsNone(format_live_duration(None))
         self.assertIsNone(format_live_duration("abc"))
+
+
+def _card_entry(card_id, **overrides):
+    entry = {
+        "Id": card_id,
+        "CardSeriesId": card_id // 10,
+        "CharactersId": 1021,
+        "Name": "テストカード",
+        "Rarity": 5,
+        "Style": 1,
+        "Mood": 1,
+        "InitialSmile": 10,
+        "MaxSmile": 100,
+        "InitialPure": 11,
+        "MaxPure": 110,
+        "InitialCool": 12,
+        "MaxCool": 120,
+        "InitialMental": 13,
+        "MaxMental": 130,
+        "BeatPoint": 100,
+        "SkillSeriesId": None,
+        "SpecialAppealSeriesId": None,
+        "AttributeId": None,
+        "RhythmGameSkillSeriesId": None,
+        "CenterSkillSeriesId": None,
+        "CenterAttributeSeriesId": None,
+    }
+    entry.update(overrides)
+    return entry
+
+
+class _FakeCardDM:
+    LIMITED_TYPES: ClassVar[dict] = {0: "常驻", 202: "音击联动"}
+    STYLES: ClassVar[dict] = {1: "Performer"}
+    MOODS: ClassVar[dict] = {1: "Happy"}
+
+    def __init__(self, cards, **options):
+        self.cards = cards
+        self.limited_type = options.get("limited_type", 0)
+        self.gachas = options.get("gachas", [])
+        # skill 数据按引用字段 id 取；merged 描述按 skill id 取
+        self.skills = options.get("skills", {})
+        self.merged = options.get("merged", {})
+        self.materials = options.get("materials", [])
+        self.center_attrs = options.get("center_attrs", {})
+        self.duet_ids = options.get("duet_ids", [])
+        self.style_voices = options.get("style_voices", [])
+        self.has_movie = options.get("has_movie", False)
+
+    def get_card_series_data(self, series_id):
+        return list(self.cards)
+
+    def get_card_series_meta(self, series_id):
+        return {"LimitedType": self.limited_type}
+
+    def get_gachas_for_series(self, series_id):
+        return list(self.gachas)
+
+    def get_character(self, char_id):
+        return {"NameLast": "乙宗", "NameFirst": "梢"}
+
+    def get_character_name(self, char_id):
+        return "乙宗梢"
+
+    def get_rarity_name(self, rarity_id):
+        return {3: "R", 5: "UR", 8: "DR"}.get(rarity_id, str(rarity_id))
+
+    def get_character_theme_color(self, char_id):
+        return "#68be8d"
+
+    def get_cost_transition(self, series_id, key, skills_map, cost_key):
+        return "20 -> 18"
+
+    def get_card_skills_map(self):
+        return {}
+
+    def get_rhythm_skills_map(self):
+        return {}
+
+    def get_all_skills_data(self, series_field_id):
+        return self.skills.get(series_field_id)
+
+    def get_all_rhythm_skills_data(self, series_field_id):
+        return self.skills.get(series_field_id)
+
+    def get_all_center_skills_data(self, series_field_id):
+        return self.skills.get(series_field_id)
+
+    def get_merged_skill_desc(self, skill_data):
+        return self.merged.get(skill_data.get("id"))
+
+    def get_center_attributes_map(self):
+        return self.center_attrs
+
+    def get_duet_voice_character_ids(self, series_id):
+        return list(self.duet_ids)
+
+    def get_style_voice_entries(self, series_id):
+        return list(self.style_voices)
+
+    def has_style_movie(self, series_id):
+        return self.has_movie
+
+    def get_card_skill_levelup_materials(self, series_id):
+        return self.materials
+
+
+class BuildCardRenderPayloadTest(unittest.TestCase):
+    def test_route_constant(self):
+        self.assertEqual(CARD_RENDER_ROUTE, "/api/llll/card")
+
+    def test_basic_fields(self):
+        cards = [_card_entry(10217030 + form) for form in range(5)]
+        dm = _FakeCardDM(
+            cards,
+            gachas=[{"name": "测试卡池", "start_time": "2026-03-31T03:00:00Z"}],
+            duet_ids=[1031],
+            has_movie=True,
+            style_voices=[{"name": "スキル発動", "voice": "vo_card_1"}],
+        )
+        payload = build_card_render_payload(dm, 1021703)
+
+        self.assertEqual(payload["schema_version"], "1")
+        self.assertEqual(payload["kind"], "llll.card")
+        self.assertNotIn("assets", payload)
+
+        card = payload["data"]["card"]
+        self.assertEqual(card["series_id"], 1021703)
+        self.assertEqual(card["name"], "テストカード")
+        self.assertEqual(card["character_name"], "乙宗梢")
+        self.assertEqual(card["character_name_jp"], "乙宗　梢")
+        self.assertEqual(card["rarity"], "UR")
+        self.assertEqual(card["limited_label"], "常驻")
+        self.assertEqual(card["style_name"], "Performer")
+        self.assertEqual(card["mood_name"], "Happy")
+        self.assertEqual(card["gachas"], ["测试卡池"])
+        self.assertEqual(card["release_date"], "2026-03-31 11:00:00 (UTC+8)")
+        self.assertEqual(card["color"], "#68be8d")
+
+        states = payload["data"]["states"]
+        self.assertEqual([s["label"] for s in states], ["特训前", "特训后", "形态 2", "形态 3", "形态 4"])
+        self.assertEqual(["full" in s for s in states], [True, True, False, False, False])
+        self.assertEqual(states[0]["full"], {"type": "image_card_full", "id": "10217030"})
+        self.assertEqual(
+            states[0]["stats"],
+            {
+                "smile_init": 10,
+                "smile_max": 100,
+                "pure_init": 11,
+                "pure_max": 110,
+                "cool_init": 12,
+                "cool_max": 120,
+                "mental_init": 13,
+                "mental_max": 130,
+                "bp": 100,
+            },
+        )
+
+        self.assertEqual(payload["data"]["duet_voice"], ["乙宗梢"])
+        self.assertEqual(
+            payload["data"]["style_movies"],
+            ["picture_ur_get_1021703_in.usm", "picture_ur_get_1021703_loop.usm"],
+        )
+        self.assertEqual(
+            payload["data"]["style_voices"],
+            [{"name": "スキル発動", "voice": "vo_card_1"}],
+        )
+        self.assertNotIn("sis_skills", payload["data"])
+        self.assertNotIn("skill_material_groups", payload["data"])
+
+    def test_ongeki_collab_showcases_state0_only(self):
+        cards = [_card_entry(10217030 + form) for form in range(3)]
+        dm = _FakeCardDM(cards, limited_type=202)
+        payload = build_card_render_payload(dm, 1021703)
+        states = payload["data"]["states"]
+        self.assertEqual(["full" in s for s in states], [True, False, False])
+        self.assertEqual(payload["data"]["card"]["limited_label"], "音击联动")
+
+    def test_no_state0_labels_sole_form(self):
+        cards = [_card_entry(10217031 + offset) for offset in range(3)]
+        dm = _FakeCardDM(cards)
+        payload = build_card_render_payload(dm, 1021703)
+        states = payload["data"]["states"]
+        self.assertEqual([s["label"] for s in states], ["仅此形态", "形态 2", "形态 3"])
+        self.assertEqual(["full" in s for s in states], [True, False, False])
+
+    def test_assets_by_file_existence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exports = Path(tmp)
+            (exports / "images" / "gacha_cardinfo").mkdir(parents=True)
+            (exports / "images" / "deck_frame_chara").mkdir(parents=True)
+            (exports / "images" / "sticker").mkdir(parents=True)
+            (exports / "images" / "gacha_cardinfo" / "image_gacha_cardinfo_1021_05.png").touch()
+            (exports / "images" / "deck_frame_chara" / "image_deck_frame_chara_1021703.png").touch()
+            (exports / "images" / "sticker" / "image_sticker_10217031.png").touch()
+
+            cards = [_card_entry(10217030), _card_entry(10217031)]
+            payload = build_card_render_payload(_FakeCardDM(cards), 1021703, exports_dir=exports)
+            assets = payload["assets"]
+            self.assertEqual(assets["nameplate"], {"type": "image_gacha_cardinfo", "id": "1021_05"})
+            self.assertEqual(assets["deck_frame"], {"type": "image_deck_frame_chara", "id": "1021703"})
+            self.assertEqual(assets["stickers"], [{"type": "image_sticker", "id": "10217031"}])
+
+            # DR（Rarity 8）无铭牌资源
+            dr_cards = [_card_entry(10217030, Rarity=8), _card_entry(10217031, Rarity=8)]
+            payload = build_card_render_payload(_FakeCardDM(dr_cards), 1021703, exports_dir=exports)
+            self.assertNotIn("nameplate", payload["assets"])
+
+    def test_skill_blocks_with_token_cards(self):
+        token_skill = {"id": 301, "icon_id": 88801}
+        token_ability = {"id": 302, "icon_id": 88802}
+        main_skill = {"id": 201, "icon_id": 77701, "main_effect": 42}
+        cards = [_card_entry(10217030, SkillSeriesId=201), _card_entry(10217031, SkillSeriesId=201)]
+        dm = _FakeCardDM(
+            cards,
+            skills={201: main_skill},
+            merged={
+                201: {
+                    "name": "メインスキル",
+                    "template": "效果模板 {}",
+                    "ranges": [
+                        {"start_level": 1, "end_level": 1, "value": "+10"},
+                        {"start_level": 2, "end_level": 4, "value": "+20"},
+                        {"start_level": 5, "end_level": None, "value": "忽略"},
+                    ],
+                    "token_cards": [
+                        {"skill": token_skill, "ability": token_ability, "resource_id": 80315381}
+                    ],
+                },
+                301: {"name": "追加技能", "template": "追加效果"},
+                302: {"name": "追加特性", "template": ""},
+            },
+        )
+        payload = build_card_render_payload(dm, 1021703)
+        blocks = payload["data"]["sis_skills"]
+        self.assertEqual(len(blocks), 1)
+        block = blocks[0]
+        self.assertEqual(block["title"], "技能:")
+        self.assertEqual(block["name"], "メインスキル")
+        self.assertEqual(block["cost_text"], "（AP 消耗: 20 -> 18）")
+        self.assertEqual(block["type_label"], "42")
+        self.assertEqual(block["template"], "效果模板 {}")
+        self.assertEqual(
+            block["ranges"],
+            [{"label": "Lv.1", "value": "+10"}, {"label": "Lv.2-4", "value": "+20"}],
+        )
+        self.assertEqual(block["icon"], {"type": "icon_skill", "id": "77701"})
+
+        token = block["token_cards"][0]
+        self.assertEqual(token["thumb"], {"type": "image_card_middle_vertical", "id": "80315381"})
+        self.assertEqual(token["skill"]["title"], "技能:")
+        self.assertEqual(token["skill"]["name"], "追加技能")
+        self.assertEqual(token["skill"]["icon"], {"type": "icon_skill", "id": "88801"})
+        self.assertEqual(token["ability"]["title"], "特性:")
+        self.assertNotIn("template", token["ability"])
+
+    def test_center_attributes_deduplicated(self):
+        cards = [_card_entry(10217030, CenterAttributeSeriesId=901), _card_entry(10217031)]
+        dm = _FakeCardDM(
+            cards,
+            center_attrs={
+                901: [
+                    {"CenterAttributeName": "属性A", "Description": "说明A"},
+                    {"CenterAttributeName": "属性A", "Description": "说明A"},
+                    {"CenterAttributeName": "属性B", "Description": "说明B"},
+                ]
+            },
+        )
+        payload = build_card_render_payload(dm, 1021703)
+        self.assertEqual(
+            payload["data"]["center_attributes"],
+            [
+                {"name": "属性A", "description": "说明A"},
+                {"name": "属性B", "description": "说明B"},
+            ],
+        )
+
+    def test_unknown_series_raises(self):
+        with self.assertRaises(ValueError):
+            build_card_render_payload(_FakeCardDM([]), 999)
+
+    def test_material_items_filter(self):
+        dm = _FakeCardDM(
+            [],
+            materials=[
+                {
+                    "materials": [
+                        {"id": 1, "name": "ダイヤピース（R3）"},
+                        {"id": 2, "name": "技能書（R3）"},
+                        {"id": 3, "name": "ピース（R2）"},
+                        {"id": 1, "name": "ダイヤピース（R3）"},
+                        {"id": None, "name": "ソル（R3）"},
+                    ]
+                }
+            ],
+        )
+        items = build_card_skill_material_items(dm, 1021703)
+        self.assertEqual(
+            items,
+            [{"id": 1, "name": "ダイヤピース（R3）", "icon": {"type": "icon_item", "id": "1"}}],
+        )
+
+    def test_format_release_time_utc8(self):
+        self.assertEqual(
+            format_release_time_utc8("2026-03-31T03:00:00Z"), "2026-03-31 11:00:00 (UTC+8)"
+        )
+        self.assertIsNone(format_release_time_utc8(None))
+        self.assertIsNone(format_release_time_utc8("  "))
+        self.assertEqual(format_release_time_utc8("not-a-time"), "not-a-time")
 
 
 if __name__ == "__main__":
