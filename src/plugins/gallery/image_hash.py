@@ -26,7 +26,7 @@ def calculate_image_hashes(image_path: Path) -> ImageHashes:
             digest.update(chunk)
 
     with Image.open(image_path) as source:
-        grayscale = ImageOps.exif_transpose(source).convert("L")
+        grayscale = _flatten_to_grayscale(ImageOps.exif_transpose(source))
         return ImageHashes(
             file_hash=digest.hexdigest(),
             dhash=_calculate_dhash(grayscale),
@@ -37,6 +37,24 @@ def calculate_image_hashes(image_path: Path) -> ImageHashes:
 
 def hamming_distance(first: int, second: int) -> int:
     return (first ^ second).bit_count()
+
+
+def _flatten_to_grayscale(image: Image.Image) -> Image.Image:
+    """先把透明区域合成到纯白背景，再转灰度。
+
+    PIL 的 RGBA -> L 会直接丢弃 alpha，透明像素取底层 RGB（通常是黑）。
+    同一张表情包的透明 PNG 与白底 JPG 因此会得到差异极大的哈希而漏判重复，
+    合成到白底可让两者收敛到同一指纹。
+    """
+    has_alpha = image.mode in ("RGBA", "LA") or (
+        image.mode == "P" and "transparency" in image.info
+    )
+    if has_alpha:
+        source = image.convert("RGBA")
+        background = Image.new("RGBA", source.size, (255, 255, 255, 255))
+        background.alpha_composite(source)
+        image = background
+    return image.convert("L")
 
 
 def perceptual_distances(

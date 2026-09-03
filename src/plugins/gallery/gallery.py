@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from .compat import atomic_write_text
 from .config import cfg, gallery_name_data
 from .image_hash import ImageHashes, calculate_image_hashes, perceptual_distances
+from .names import DEFAULT_MODE, MODE_LABELS, GalleryMode
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,7 @@ class GalleryOverviewItem:
     aliases: list[str]
     picture_count: int
     cover_path: Path | None
+    mode: GalleryMode = DEFAULT_MODE
 
 
 def get_gallery_name(name_or_alias: str) -> str | None:
@@ -59,6 +61,79 @@ def get_gallery_name(name_or_alias: str) -> str | None:
 def get_picture_by_id(pic_id: int) -> Path | None:
     """根据图片id获取图片文件路径"""
     return _gallery_index.get_picture_by_id(pic_id)
+
+
+def get_gallery_mode(name: str) -> GalleryMode:
+    """读取画廊模式；缺失或被手工改坏的值一律回退到默认模式"""
+    raw = gallery_name_data.instance.name_to_mode.get(name)
+    return raw if raw in MODE_LABELS else DEFAULT_MODE
+
+
+def set_gallery_mode(name: str, mode: GalleryMode) -> None:
+    """设置画廊模式；等于默认值时删除条目，保持索引文件精简"""
+    v = gallery_name_data.instance
+    if mode == DEFAULT_MODE:
+        v.name_to_mode.pop(name, None)
+    else:
+        v.name_to_mode[name] = mode
+    gallery_name_data.save_to_file()
+    invalidate_gallery_render_cache()
+
+
+def is_gallery_hidden(name: str) -> bool:
+    """off 模式的画廊对非超级用户完全不可见"""
+    return get_gallery_mode(name) == "off"
+
+
+def is_gallery_writable(name: str) -> bool:
+    """只有 edit 模式允许非超级用户增删图片与别名"""
+    return get_gallery_mode(name) == "edit"
+
+
+def set_gallery_cover(name: str, pic_id: int) -> None:
+    gallery_name_data.instance.name_to_cover[name] = pic_id
+    gallery_name_data.save_to_file()
+    invalidate_gallery_render_cache()
+
+
+def clear_gallery_cover(name: str) -> None:
+    if gallery_name_data.instance.name_to_cover.pop(name, None) is not None:
+        gallery_name_data.save_to_file()
+        invalidate_gallery_render_cache()
+
+
+def _picture_id_of(path: Path) -> int | None:
+    """图片文件名即其 id；无法解析的文件（如手工放入的杂项）返回 None"""
+    try:
+        return int(path.stem)
+    except ValueError:
+        return None
+
+
+def list_picture_ids(*, include_hidden: bool = False) -> list[int]:
+    """按升序返回全部图片 id，供负数索引（看 -1 取最新一张）使用"""
+    ids: list[int] = []
+    for name in gallery_name_data.instance.name_to_aliases:
+        if not include_hidden and is_gallery_hidden(name):
+            continue
+        gallery_dir = cfg.data_dir_path / name
+        if not gallery_dir.is_dir():
+            continue
+        for path in gallery_dir.iterdir():
+            if path.is_file() and (pic_id := _picture_id_of(path)) is not None:
+                ids.append(pic_id)
+    ids.sort()
+    return ids
+
+
+def resolve_picture_index(index: int, *, include_hidden: bool = False) -> int | None:
+    """把负数索引换算为真实图片 id：-1 是最新入库的一张"""
+    if index >= 0:
+        return index
+    ids = list_picture_ids(include_hidden=include_hidden)
+    if not ids or index < -len(ids):
+        return None
+    return ids[index]
 
 
 def save_pictures(name: str, pic_paths: list[Path]) -> list[Path]:
@@ -179,7 +254,23 @@ def find_duplicate_pictures(
     return unique_paths, duplicates
 
 
-HASH_INDEX_FILE_NAME = "image_index_v1.json"
+HASH_INDEX_FILE_NAME = "image_index_v2.json"
+"""哈希算法变更时递增版本号：索引里缓存着按旧算法算出的哈希值，
+沿用旧文件会让新旧指纹混在同一次比较里，查重结果不可预测。"""
+
+HASH_INDEX_VERSION = 2
+
+
+def _cleanup_stale_hash_index() -> None:
+    """删除旧版本的哈希索引文件，避免在缓存目录里留下永不再读的孤儿文件"""
+    try:
+        for entry in cfg.cache_dir_path.glob("image_index_v*.json"):
+            if entry.name == HASH_INDEX_FILE_NAME or not entry.is_file():
+                continue
+            entry.unlink()
+            logger.info(f"已清理旧哈希索引文件：{entry}")
+    except OSError as e:
+        logger.warning(f"清理旧哈希索引失败：{e}")
 
 
 class GalleryImageIndex:
@@ -200,7 +291,7 @@ class GalleryImageIndex:
         self._picture_ids = {}
         try:
             data = json.loads(self._index_path().read_text(encoding="utf-8"))
-            if data.get("version") == 1 and isinstance(data.get("entries"), dict):
+            if data.get("version") == HASH_INDEX_VERSION and isinstance(data.get("entries"), dict):
                 self._entries = data["entries"]
                 self._picture_ids = {
                     Path(relative).stem: relative for relative in self._entries
@@ -350,13 +441,26 @@ class GalleryImageIndex:
                 self._save()
             return result
 
+    def clear_hashes(self, name: str) -> None:
+        """清空某个画廊已缓存的哈希，强制下次比较时重算"""
+        with self._lock:
+            self._ensure_loaded()
+            prefix = f"{Path(name).as_posix()}/"
+            changed = False
+            for relative, entry in self._entries.items():
+                if relative.startswith(prefix) and entry.get("file_hash") is not None:
+                    entry.update(file_hash=None, dhash=None, phash=None, ahash=None)
+                    changed = True
+            if changed:
+                self._save()
+
     def _save(self) -> None:
         index_path = self._index_path()
         try:
             atomic_write_text(
                 index_path,
                 json.dumps(
-                    {"version": 1, "entries": self._entries},
+                    {"version": HASH_INDEX_VERSION, "entries": self._entries},
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),
@@ -364,6 +468,8 @@ class GalleryImageIndex:
         except OSError as e:
             logger.warning(f"无法保存画廊图片索引 {index_path}：{e}")
 
+
+_cleanup_stale_hash_index()
 
 _gallery_index = GalleryImageIndex()
 
@@ -374,6 +480,34 @@ def remove_picture_from_index(path: Path) -> None:
 
 def remove_gallery_from_index(name: str) -> None:
     _gallery_index.remove_gallery(name)
+
+
+def find_duplicate_groups(name: str, *, rehash: bool = False) -> list[list[int]]:
+    """扫描画廊内已存在的重复图片，每组返回一串图片 id（首项是最早入库的那张）。
+
+    入库查重只挡得住"当时可比"的图片：阈值调整、哈希算法升级、force 强制入库
+    都会在库里留下漏网的重复，需要这样一次全量补扫。
+    """
+    if rehash:
+        _gallery_index.clear_hashes(name)
+
+    ordered: list[tuple[int, ImageHashes]] = []
+    for path, hashes in _gallery_index.hashes_for_gallery(name):
+        if (pic_id := _picture_id_of(path)) is not None:
+            ordered.append((pic_id, hashes))
+    ordered.sort(key=lambda item: item[0])
+
+    # 贪心分组：每张图与已有各组的代表比较，命中即归入该组
+    representatives: list[tuple[ImageHashes, list[int]]] = []
+    for pic_id, hashes in ordered:
+        for rep_hashes, members in representatives:
+            same_file = rep_hashes.file_hash == hashes.file_hash
+            if same_file or perceptual_distances(hashes, rep_hashes) is not None:
+                members.append(pic_id)
+                break
+        else:
+            representatives.append((hashes, [pic_id]))
+    return [members for _, members in representatives if len(members) > 1]
 
 
 GALLERY_COLUMNS = 10
@@ -397,6 +531,8 @@ DUPLICATE_HEADER_HEIGHT = 80
 RENDER_CACHE_DIR_NAME = "rendered_v2"
 """渲染逻辑（字体、布局等）变更时递增版本号，旧目录会在插件加载时被清理"""
 OVERVIEW_CACHE_FILE_NAME = "overview.png"
+OVERVIEW_ALL_CACHE_FILE_NAME = "overview_all.png"
+"""总览按可见范围分两份缓存：普通用户看不到 off 画廊，超级用户要看到全部"""
 
 
 def _cleanup_stale_render_cache() -> None:
@@ -414,9 +550,11 @@ def _cleanup_stale_render_cache() -> None:
 _cleanup_stale_render_cache()
 
 
-def _render_cache_path(name: str | None = None) -> Path:
+def _render_cache_path(name: str | None = None, *, include_hidden: bool = False) -> Path:
     cache_dir = cfg.cache_dir_path / RENDER_CACHE_DIR_NAME
     if name is None:
+        if include_hidden:
+            return cache_dir / OVERVIEW_ALL_CACHE_FILE_NAME
         return cache_dir / OVERVIEW_CACHE_FILE_NAME
     cache_key = sha256(name.encode()).hexdigest()
     return cache_dir / f"gallery_{cache_key}.png"
@@ -442,11 +580,18 @@ def _write_render_cache(cache_path: Path, image: bytes) -> None:
 
 def invalidate_gallery_render_cache(name: str | None = None) -> None:
     """Invalidate the overview cache or one gallery's thumbnail cache."""
-    cache_path = _render_cache_path(name)
-    try:
-        cache_path.unlink(missing_ok=True)
-    except OSError as e:
-        logger.warning(f"无法删除画廊渲染缓存 {cache_path}：{e}")
+    if name is None:
+        cache_paths = [
+            _render_cache_path(include_hidden=False),
+            _render_cache_path(include_hidden=True),
+        ]
+    else:
+        cache_paths = [_render_cache_path(name)]
+    for cache_path in cache_paths:
+        try:
+            cache_path.unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(f"无法删除画廊渲染缓存 {cache_path}：{e}")
 
 
 def render_gallery_thumbnails(name: str, pic_files: list[Path]) -> bytes:
@@ -455,11 +600,17 @@ def render_gallery_thumbnails(name: str, pic_files: list[Path]) -> bytes:
     if (cached_image := _read_render_cache(cache_path)) is not None:
         return cached_image
 
+    numbered_files: list[tuple[int, Path]] = []
+    for pic_file in pic_files:
+        if (pic_id := _picture_id_of(pic_file)) is None:
+            logger.warning(f"画廊目录中的 {pic_file} 不是以图片 id 命名的文件，已跳过")
+            continue
+        numbered_files.append((pic_id, pic_file))
+
     thumbnails: list[tuple[int, Image.Image]] = []
-    for pic_file in sorted(pic_files, key=lambda path: int(path.stem)):
+    for pic_id, pic_file in sorted(numbered_files):
         try:
-            thumbnail = _load_thumbnail(pic_file, THUMBNAIL_SIZE)
-            thumbnails.append((int(pic_file.stem), thumbnail))
+            thumbnails.append((pic_id, _load_thumbnail(pic_file, THUMBNAIL_SIZE)))
         except OSError as e:
             logger.warning(f"无法读取画廊图片 {pic_file}，已跳过：{e}")
 
@@ -498,42 +649,48 @@ def render_gallery_thumbnails(name: str, pic_files: list[Path]) -> bytes:
     return image
 
 
-def get_gallery_overview_items() -> list[GalleryOverviewItem]:
+def get_gallery_overview_items(*, include_hidden: bool = False) -> list[GalleryOverviewItem]:
     """Collect cover and metadata for every gallery in index order."""
     items: list[GalleryOverviewItem] = []
+    cover_ids = gallery_name_data.instance.name_to_cover
     for name, aliases in gallery_name_data.instance.name_to_aliases.items():
+        mode = get_gallery_mode(name)
+        if not include_hidden and mode == "off":
+            continue
         gallery_dir = cfg.data_dir_path / name
         if not gallery_dir.is_dir():
             logger.warning(f"画廊索引中存在画廊名称 {name}，但对应的目录不存在：{gallery_dir}")
-            items.append(GalleryOverviewItem(name, list(aliases), 0, None))
+            items.append(GalleryOverviewItem(name, list(aliases), 0, None, mode))
             continue
 
-        picture_count = 0
-        cover_path: Path | None = None
+        picture_paths: dict[int, Path] = {}
         for path in gallery_dir.iterdir():
-            if not path.is_file():
-                continue
-            picture_count += 1
-            if cover_path is None:
-                cover_path = path
+            if path.is_file() and (pic_id := _picture_id_of(path)) is not None:
+                picture_paths[pic_id] = path
+
+        cover_path = picture_paths.get(cover_ids.get(name, -1))
+        if cover_path is None and picture_paths:
+            # 未指定封面（或指定的图已被删除）时退回 id 最小的一张，保证结果稳定
+            cover_path = picture_paths[min(picture_paths)]
         items.append(
             GalleryOverviewItem(
                 name=name,
                 aliases=list(aliases),
-                picture_count=picture_count,
+                picture_count=len(picture_paths),
                 cover_path=cover_path,
+                mode=mode,
             )
         )
     return items
 
 
-def render_gallery_overview() -> bytes:
+def render_gallery_overview(*, include_hidden: bool = False) -> bytes:
     """Render all gallery covers and metadata as an image."""
-    cache_path = _render_cache_path()
+    cache_path = _render_cache_path(include_hidden=include_hidden)
     if (cached_image := _read_render_cache(cache_path)) is not None:
         return cached_image
 
-    items = get_gallery_overview_items()
+    items = get_gallery_overview_items(include_hidden=include_hidden)
     if not items:
         return b""
 
@@ -556,6 +713,8 @@ def render_gallery_overview() -> bytes:
             15,
             text_width,
         )
+        if item.mode != DEFAULT_MODE:
+            alias_lines.append(f"状态：{MODE_LABELS[item.mode]}")
         cell_height = (
             OVERVIEW_COVER_SIZE[1]
             + OVERVIEW_TEXT_GAP

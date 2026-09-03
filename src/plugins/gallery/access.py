@@ -49,3 +49,8 @@ def format_access_config(config: AccessConfig) -> str:
         lines.append("名单为空")
     lines.append("超级用户始终不受限制")
     return "\n".join(lines)
+
+
+async def is_superuser(bot: OneBot, event: OneBotMessageEvent) -> bool:
+    """超级用户可越过画廊自身的 view/off 模式限制"""
+    return await SUPERUSER(bot, event)

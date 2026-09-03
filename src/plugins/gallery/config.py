@@ -73,6 +73,16 @@ class GalleryNameData(BaseModel):
     name_to_aliases: dict[str, list[str]] = {}
     """画廊名称到别名的映射"""
 
+    name_to_mode: dict[str, str] = {}
+    """画廊名称到开放模式（edit/view/off）的映射，缺省视为 edit
+
+    存成裸 str 而非 Literal：手工改坏这个值只应让单个画廊回退到默认模式，
+    不该让整份索引文件校验失败、拖垮整个插件加载。
+    """
+
+    name_to_cover: dict[str, int] = {}
+    """画廊名称到封面图片 id 的映射，缺省用目录内 id 最小的图片"""
+
     iota: int = 0
     """用于生成图片名称的自增计数器"""
 

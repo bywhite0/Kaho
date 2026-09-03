@@ -102,3 +102,39 @@ gallery_access_ctrl = on_command(
     permission=SUPERUSER,
     block=True,
 )
+
+gallery_mode_ctrl = on_command(
+    "画廊模式",
+    aliases={"gallery_mode"},
+    rule=gallery_writable,
+    priority=2,
+    permission=SUPERUSER,
+    block=True,
+)
+
+set_gallery_cover_cmd = on_command(
+    "设置封面",
+    aliases={"gallery_cover", "画廊封面"},
+    rule=gallery_writable,
+    priority=2,
+    permission=SUPERUSER,
+    block=True,
+)
+
+gallery_dedupe = on_command(
+    "画廊查重",
+    aliases={"gallery_dedupe"},
+    rule=gallery_writable,
+    priority=2,
+    permission=SUPERUSER,
+    block=True,
+)
+
+export_gallery = on_command(
+    "导出画廊",
+    aliases={"gallery_export"},
+    rule=gallery_writable,
+    priority=2,
+    permission=SUPERUSER,
+    block=True,
+)
