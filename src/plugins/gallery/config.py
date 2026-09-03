@@ -33,23 +33,25 @@ class ScopedConfig(BaseModel):
     send_pic_mode: Literal["base64", "path"] = "base64"
     """发图方式：base64 内联图片字节，协议端与 bot 异机也可用；path 直发本地文件路径，需协议端与 bot 同机，开销更低"""
 
+    # 以下路径一律返回展开符号链接后的真实路径：索引层用 resolve() 后的路径做 relative_to 比较，
+    # send2trash 在 Windows 走 SHFileOperationW，穿过符号链接的路径会被 Shell 拒绝（WinError 161）。
     @property
     def name_data_file_path(self) -> Path:
-        return get_plugin_data_file(self.name_data_file)
+        return get_plugin_data_file(self.name_data_file).resolve()
 
     @property
     def access_data_file_path(self) -> Path:
-        return get_plugin_data_file(self.access_data_file)
+        return get_plugin_data_file(self.access_data_file).resolve()
 
     @property
     def data_dir_path(self) -> Path:
         """画廊数据存储根目录"""
-        return get_plugin_data_dir()
+        return get_plugin_data_dir().resolve()
 
     @property
     def cache_dir_path(self) -> Path:
         """画廊缓存目录"""
-        return get_plugin_cache_dir()
+        return get_plugin_cache_dir().resolve()
 
 
 class Config(BaseModel):
