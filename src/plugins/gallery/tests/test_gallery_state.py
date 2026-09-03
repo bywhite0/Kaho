@@ -173,6 +173,79 @@ def test_cover_defaults_to_smallest_id_and_follows_selection():
     assert cover_of() == "9201.png"
 
 
+# ---------- 体积统计 ----------
+
+
+def test_size_formatting_scales_by_unit():
+    cases = {
+        0: "0 B",
+        512: "512 B",
+        1024: "1.0 KB",
+        1536: "1.5 KB",
+        150 * 1024: "150 KB",  # 三位数省掉小数位
+        1024 * 1024: "1.0 MB",
+        3 * 1024 * 1024 + 512 * 1024: "3.5 MB",
+        2 * 1024**3: "2.0 GB",
+        # 超出 GB 量级也不进位、不抛错；三位数以上省掉小数位
+        4096 * 1024**3: "4096 GB",
+    }
+    for num_bytes, expected in cases.items():
+        assert gallery.format_size(num_bytes) == expected, num_bytes
+
+
+def test_overview_reports_size_per_gallery():
+    name = "体积统计"
+    gallery_dir = _register_gallery(name)
+    for pic_id in (9901, 9902):
+        _add_picture(name, pic_id)
+    (gallery_dir / "notes.txt").write_text("x" * 4096, encoding="utf-8")
+
+    expected = sum(
+        (gallery_dir / f"{pic_id}.png").stat().st_size for pic_id in (9901, 9902)
+    )
+    for item in gallery.get_gallery_overview_items(include_hidden=True):
+        if item.name == name:
+            # 只统计以 id 命名的图片，杂项文件不计入
+            assert item.total_bytes == expected
+            assert item.picture_count == 2
+            return
+    raise AssertionError(f"总览中缺少画廊 {name}")
+
+
+def test_missing_gallery_directory_reports_zero_size():
+    name = "无目录"
+    gallery_name_data.instance.name_to_aliases.setdefault(name, [])
+    gallery_name_data.save_to_file()
+    for item in gallery.get_gallery_overview_items(include_hidden=True):
+        if item.name == name:
+            assert item.total_bytes == 0
+            assert item.picture_count == 0
+            return
+    raise AssertionError(f"总览中缺少画廊 {name}")
+
+
+def test_thumbnail_wall_renders_with_header():
+    """加了标题栏后画布要相应变高，且渲染结果可被 PIL 正常解析"""
+    import io
+
+    name = "墙体积"
+    _register_gallery(name)
+    for pic_id in (9911, 9912, 9913):
+        _add_picture(name, pic_id)
+    pic_files = handler._gallery_picture_files(name)
+
+    image_bytes = gallery.render_gallery_thumbnails(name, pic_files)
+    assert image_bytes
+    with Image.open(io.BytesIO(image_bytes)) as rendered:
+        expected_height = (
+            gallery.GALLERY_PADDING * 2
+            + gallery.THUMBNAIL_HEADER_HEIGHT
+            + (gallery.THUMBNAIL_SIZE[1] + gallery.LABEL_HEIGHT)
+        )
+        assert rendered.height == expected_height, rendered.size
+        assert rendered.width > gallery.THUMBNAIL_SIZE[0]
+
+
 # ---------- 图片 id 索引 ----------
 
 

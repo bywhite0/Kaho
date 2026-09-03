@@ -48,6 +48,7 @@ class GalleryOverviewItem:
     picture_count: int
     cover_path: Path | None
     mode: GalleryMode = DEFAULT_MODE
+    total_bytes: int = 0
 
 
 def get_gallery_name(name_or_alias: str) -> str | None:
@@ -61,6 +62,17 @@ def get_gallery_name(name_or_alias: str) -> str | None:
 def get_picture_by_id(pic_id: int) -> Path | None:
     """根据图片id获取图片文件路径"""
     return _gallery_index.get_picture_by_id(pic_id)
+
+
+def format_size(num_bytes: int) -> str:
+    """把字节数格式化为最多一位小数的可读体积"""
+    size = float(num_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            precision = 0 if unit == "B" or size >= 100 else 1
+            return f"{size:.{precision}f} {unit}"
+        size /= 1024
+    raise AssertionError("unreachable")
 
 
 def get_gallery_mode(name: str) -> GalleryMode:
@@ -515,6 +527,8 @@ THUMBNAIL_SIZE = (100, 75)
 GALLERY_PADDING = 16
 GALLERY_GAP = 8
 LABEL_HEIGHT = 24
+THUMBNAIL_HEADER_HEIGHT = 42
+"""缩略图墙顶部标题栏（画廊名 + 图片数 + 占用体积）的高度"""
 
 OVERVIEW_COLUMNS = 5
 OVERVIEW_CELL_WIDTH = 220
@@ -528,7 +542,7 @@ DUPLICATE_CELL_WIDTH = 408
 DUPLICATE_CELL_HEIGHT = 200
 DUPLICATE_HEADER_HEIGHT = 80
 
-RENDER_CACHE_DIR_NAME = "rendered_v2"
+RENDER_CACHE_DIR_NAME = "rendered_v3"
 """渲染逻辑（字体、布局等）变更时递增版本号，旧目录会在插件加载时被清理"""
 OVERVIEW_CACHE_FILE_NAME = "overview.png"
 OVERVIEW_ALL_CACHE_FILE_NAME = "overview_all.png"
@@ -608,9 +622,11 @@ def render_gallery_thumbnails(name: str, pic_files: list[Path]) -> bytes:
         numbered_files.append((pic_id, pic_file))
 
     thumbnails: list[tuple[int, Image.Image]] = []
+    total_bytes = 0
     for pic_id, pic_file in sorted(numbered_files):
         try:
             thumbnails.append((pic_id, _load_thumbnail(pic_file, THUMBNAIL_SIZE)))
+            total_bytes += pic_file.stat().st_size
         except OSError as e:
             logger.warning(f"无法读取画廊图片 {pic_file}，已跳过：{e}")
 
@@ -622,15 +638,32 @@ def render_gallery_thumbnails(name: str, pic_files: list[Path]) -> bytes:
     cell_width = THUMBNAIL_SIZE[0]
     cell_height = THUMBNAIL_SIZE[1] + LABEL_HEIGHT
     canvas_width = GALLERY_PADDING * 2 + columns * cell_width + (columns - 1) * GALLERY_GAP
-    canvas_height = GALLERY_PADDING * 2 + rows * cell_height + (rows - 1) * GALLERY_GAP
+    canvas_height = (
+        GALLERY_PADDING * 2
+        + THUMBNAIL_HEADER_HEIGHT
+        + rows * cell_height
+        + (rows - 1) * GALLERY_GAP
+    )
     canvas = Image.new("RGB", (canvas_width, canvas_height), "white")
     draw = ImageDraw.Draw(canvas)
     font = ImageFont.load_default(size=24)
 
+    title_font = _load_font(20, bold=True)
+    _draw_text_with_emoji(
+        canvas,
+        draw,
+        (GALLERY_PADDING, GALLERY_PADDING),
+        f"{name}  {len(thumbnails)} 张 · {format_size(total_bytes)}",
+        title_font,
+        20,
+        fill="#202124",
+    )
+
+    grid_top = GALLERY_PADDING + THUMBNAIL_HEADER_HEIGHT
     for index, (pic_id, thumbnail) in enumerate(thumbnails):
         row, column = divmod(index, columns)
         cell_x = GALLERY_PADDING + column * (cell_width + GALLERY_GAP)
-        cell_y = GALLERY_PADDING + row * (cell_height + GALLERY_GAP)
+        cell_y = grid_top + row * (cell_height + GALLERY_GAP)
         image_x = cell_x + (cell_width - thumbnail.width) // 2
         image_y = cell_y + (THUMBNAIL_SIZE[1] - thumbnail.height) // 2
         canvas.paste(thumbnail, (image_x, image_y), thumbnail)
@@ -664,9 +697,14 @@ def get_gallery_overview_items(*, include_hidden: bool = False) -> list[GalleryO
             continue
 
         picture_paths: dict[int, Path] = {}
+        total_bytes = 0
         for path in gallery_dir.iterdir():
             if path.is_file() and (pic_id := _picture_id_of(path)) is not None:
                 picture_paths[pic_id] = path
+                try:
+                    total_bytes += path.stat().st_size
+                except OSError as e:
+                    logger.warning(f"无法读取画廊图片 {path} 的大小：{e}")
 
         cover_path = picture_paths.get(cover_ids.get(name, -1))
         if cover_path is None and picture_paths:
@@ -679,6 +717,7 @@ def get_gallery_overview_items(*, include_hidden: bool = False) -> list[GalleryO
                 picture_count=len(picture_paths),
                 cover_path=cover_path,
                 mode=mode,
+                total_bytes=total_bytes,
             )
         )
     return items
@@ -738,9 +777,11 @@ def render_gallery_overview(*, include_hidden: bool = False) -> bytes:
     )
     canvas = Image.new("RGB", (canvas_width, canvas_height), "white")
     draw = ImageDraw.Draw(canvas)
+    total_pictures = sum(item.picture_count for item in items)
+    total_bytes = sum(item.total_bytes for item in items)
     draw.text(
         (GALLERY_PADDING, GALLERY_PADDING),
-        f"画廊一览  共 {len(items)} 个",
+        f"画廊一览  共 {len(items)} 个  {total_pictures} 张  {format_size(total_bytes)}",
         fill="#202124",
         font=title_font,
     )
@@ -769,7 +810,7 @@ def render_gallery_overview(*, include_hidden: bool = False) -> bytes:
             text_y += 27
         draw.text(
             (text_x, text_y),
-            f"图片：{item.picture_count} 张",
+            f"图片：{item.picture_count} 张 · {format_size(item.total_bytes)}",
             fill="#5f6368",
             font=detail_font,
         )
