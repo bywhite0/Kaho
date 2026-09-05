@@ -1,14 +1,14 @@
 from nonebot import on_command
 from nonebot.permission import SUPERUSER
 
-from .access import gallery_readable, gallery_writable
+from .access import GALLERY_ADMIN, gallery_readable, gallery_writable
 
 add_gallery = on_command(
     "添加画廊",
     aliases={"add_gallery"},
     rule=gallery_writable,
     priority=2,
-    permission=SUPERUSER,
+    permission=GALLERY_ADMIN,
     block=True,
 )
 
@@ -34,7 +34,7 @@ remove_gallery_alias = on_command(
     aliases={"remove_gallery_alias", "删除别名"},
     rule=gallery_writable,
     priority=2,
-    permission=SUPERUSER,
+    permission=GALLERY_ADMIN,
     block=True,
 )
 
@@ -67,7 +67,7 @@ remove_picture = on_command(
     aliases={"remove_picture"},
     rule=gallery_writable,
     priority=2,
-    permission=SUPERUSER,
+    permission=GALLERY_ADMIN,
     block=True,
 )
 
@@ -117,7 +117,7 @@ set_gallery_cover_cmd = on_command(
     aliases={"gallery_cover", "画廊封面"},
     rule=gallery_writable,
     priority=2,
-    permission=SUPERUSER,
+    permission=GALLERY_ADMIN,
     block=True,
 )
 
@@ -126,7 +126,7 @@ gallery_dedupe = on_command(
     aliases={"gallery_dedupe"},
     rule=gallery_writable,
     priority=2,
-    permission=SUPERUSER,
+    permission=GALLERY_ADMIN,
     block=True,
 )
 

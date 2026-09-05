@@ -202,7 +202,11 @@ async def _(
 
 
 @remove_gallery_alias.handle()
-async def _(arg_msg: Message = CommandArg()):
+async def _(
+    bot: OneBot,
+    event: OneBotMessageEvent,
+    arg_msg: Message = CommandArg(),
+):
     alias = arg_msg.extract_plain_text().strip()
     if not alias:
         await remove_gallery_alias.finish("请提供要删除的别名。")
@@ -210,6 +214,11 @@ async def _(arg_msg: Message = CommandArg()):
     v = gallery_name_data.instance
     if alias not in v.alias_to_name:
         await remove_gallery_alias.finish(f"别名 {alias} 不存在。")
+    # 群管可执行本命令，故隐藏画廊要按「别名不存在」回复，不能泄露它的存在
+    owner = v.alias_to_name[alias]
+    if is_gallery_hidden(owner) and not await is_superuser(bot, event):
+        await remove_gallery_alias.finish(f"别名 {alias} 不存在。")
+    await _ensure_gallery_editable(remove_gallery_alias, bot, event, owner)
 
     # 删除别名
     name = v.alias_to_name.pop(alias)
@@ -556,15 +565,22 @@ async def _finish_add_pictures(
 
 
 @remove_picture.handle()
-async def _(arg_msg: Message = CommandArg()):
+async def _(
+    bot: OneBot,
+    event: OneBotMessageEvent,
+    arg_msg: Message = CommandArg(),
+):
     arg_str = arg_msg.extract_plain_text().strip()
     if not INTEGER_PATTERN.match(arg_str) or int(arg_str) < 0:
         await remove_picture.finish("请提供有效的图片id。")
 
     pic_id = int(arg_str)
+    # 群管可执行本命令：隐藏画廊的图按「找不到」回复，只读画廊的图不允许删
+    include_hidden = await is_superuser(bot, event)
     pic_path = get_picture_by_id(pic_id)
-    if pic_path is None:
+    if pic_path is None or not _is_visible_picture(pic_path, include_hidden):
         await remove_picture.finish(f"未找到图片id {pic_id} 对应的图片文件。")
+    await _ensure_gallery_editable(remove_picture, bot, event, _gallery_name_of(pic_path))
 
     # 将图片文件移至废纸篓
     try:
@@ -821,7 +837,11 @@ async def _(
 
 
 @set_gallery_cover_cmd.handle()
-async def _(arg_msg: Message = CommandArg()):
+async def _(
+    bot: OneBot,
+    event: OneBotMessageEvent,
+    arg_msg: Message = CommandArg(),
+):
     args = parse_arg_message(
         arg_msg.extract_plain_text(),
         {"name": str, "pic_id": str},
@@ -836,6 +856,9 @@ async def _(arg_msg: Message = CommandArg()):
     name = get_gallery_name(name_or_alias)
     if not name:
         await set_gallery_cover_cmd.finish(f"未找到画廊：{name_or_alias}")
+    # 群管可执行本命令，故要补上画廊自身的可见性与只读约束
+    await _ensure_gallery_visible(set_gallery_cover_cmd, bot, event, name)
+    await _ensure_gallery_editable(set_gallery_cover_cmd, bot, event, name)
 
     if pic_id_str in ("清除", "默认", "clear"):
         await asyncio.to_thread(clear_gallery_cover, name)
@@ -876,6 +899,8 @@ async def _(
     name = get_gallery_name(name_or_alias)
     if not name:
         await gallery_dedupe.finish(f"未找到画廊：{name_or_alias}")
+    # 群管可执行本命令；不补这道门，隐藏画廊的图片 id 就能被枚举出来
+    await _ensure_gallery_visible(gallery_dedupe, bot, event, name)
 
     rehash = flag is not None
     await gallery_dedupe.send(

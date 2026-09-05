@@ -21,6 +21,7 @@ TEST_MODULES = (
 
 SUBPROCESS_SCRIPTS = (
     "test_gallery_state.py",
+    "test_permission.py",
     "smoke_load_plugin.py",
 )
 """这些脚本要初始化 NoneBot 并设置进程级的 LOCALSTORE_* 环境变量，
