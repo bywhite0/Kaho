@@ -64,7 +64,14 @@ from .matcher import (
     tag_search,
 )
 from .meta import PictureMeta, get_picture_meta_index
-from .names import INTEGER_PATTERN, MODE_LABELS, parse_mode_token, validate_gallery_name
+from .names import (
+    INTEGER_PATTERN,
+    MODE_LABELS,
+    parse_hash_picture_ids,
+    parse_mode_token,
+    validate_gallery_alias,
+    validate_gallery_name,
+)
 
 
 async def _ensure_gallery_visible(
@@ -170,7 +177,7 @@ async def _(
 
     if not name or not alias:
         await add_gallery_alias.finish("请提供画廊名称和别名，格式：<画廊名称> <别名>")
-    if reason := validate_gallery_name(alias):
+    if reason := validate_gallery_alias(alias):
         await add_gallery_alias.finish(f"别名无效：{reason}")
     v = gallery_name_data.instance
     if name not in v.name_to_aliases:
@@ -187,7 +194,11 @@ async def _(
     v.name_to_aliases[name].append(alias)
     gallery_name_data.save_to_file()
     invalidate_gallery_render_cache()
-    await add_gallery_alias.finish(f"成功为画廊 {name} 添加别名：{alias}")
+    tip = ""
+    if INTEGER_PATTERN.match(alias):
+        # iota 只增不减：该 id 要么已有图片，要么将来会有，提示无需先查存在性
+        tip = f"\n注意：「看 {alias}」今后会命中本画廊；要取图片 {alias} 请用「看 #{alias}」。"
+    await add_gallery_alias.finish(f"成功为画廊 {name} 添加别名：{alias}{tip}")
 
 
 @remove_gallery_alias.handle()
@@ -255,8 +266,12 @@ async def _(
     if not arg_str:
         await get_picture.finish("请提供画廊名称或图片id。")
 
+    # 「看 #5」显式按 id 取图：纯数字别名遮蔽同号图片时，这是精确取图的通路
+    if forced_ids := parse_hash_picture_ids(arg_str):
+        await _finish_pictures_by_ids(bot, event, forced_ids)
+
     tokens = arg_str.split()
-    # 画廊名优先：历史数据里可能存在纯数字画廊名，不能被 id 解析抢走
+    # 画廊名优先：纯数字别名与历史遗留的纯数字画廊名都不能被 id 解析抢走
     is_gallery = len(tokens) == 1 and get_gallery_name(tokens[0]) is not None
     if not is_gallery and all(INTEGER_PATTERN.match(token) for token in tokens):
         await _finish_pictures_by_ids(bot, event, [int(token) for token in tokens])

@@ -24,6 +24,8 @@ INTEGER_PATTERN = _names.INTEGER_PATTERN
 MAX_NAME_LENGTH = _names.MAX_NAME_LENGTH
 MODE_LABELS = _names.MODE_LABELS
 DEFAULT_MODE = _names.DEFAULT_MODE
+validate_gallery_alias = _names.validate_gallery_alias
+parse_hash_picture_ids = _names.parse_hash_picture_ids
 
 
 # ---------- 合法名称 ----------
@@ -74,26 +76,93 @@ def test_rejects_control_characters():
 # ---------- 与图片 id 的互斥 ----------
 
 
-def test_rejects_pure_digits():
+def test_gallery_name_rejects_pure_digits():
     for name in ("1", "123", "0", "-1", "+5"):
         assert validate_gallery_name(name) is not None, name
 
 
-def test_integer_forms_are_never_valid_names():
-    """凡是能被解析成图片 id 的字符串都必须是非法名称。
+def test_gallery_name_rejects_every_integer_form():
+    """画廊名不能是任何能被解析成图片 id 的字符串。
 
-    这是"画廊名遮蔽图片 id"不会发生的充要条件：命令层用同一个
-    INTEGER_PATTERN 识别 id，两边一致就不存在取不到图的死角。
+    画廊名没有"删掉即撤销"的手段，所以裸数字 token 必须永远指向图片：命令层用
+    同一个 INTEGER_PATTERN 识别 id，两边一致就不存在取不到图的死角。
     """
     for candidate in ("7", "-7", "+7", "0", "999999"):
         assert INTEGER_PATTERN.match(candidate), candidate
         assert validate_gallery_name(candidate) is not None, candidate
 
 
+def test_alias_accepts_every_integer_form():
+    """别名允许纯数字：遮蔽同号图片的代价由「看 #<id>」和删除别名两头兜住。"""
+    for candidate in ("7", "-7", "+7", "0", "999999"):
+        assert INTEGER_PATTERN.match(candidate), candidate
+        assert validate_gallery_alias(candidate) is None, candidate
+
+
+def test_alias_shares_all_non_numeric_rules():
+    """除纯数字外，别名与画廊名的规则必须逐条一致，否则两类名字的字符集分叉。"""
+    shared_invalid = (
+        "",
+        "啊" * (MAX_NAME_LENGTH + 1),
+        " memes",
+        "memes ",
+        "表情 包",
+        "a\nb",
+        "a\x00b",
+        "a\x7fb",
+        "a/b",
+        "a\\b",
+        'a"b',
+        ".",
+        "..",
+        "memes.",
+        "CON",
+        "com1.png",
+    )
+    for name in shared_invalid:
+        assert validate_gallery_alias(name) is not None, name
+        assert validate_gallery_name(name) is not None, name
+    for name in ("表情包", "memes", "kaho-2024", "全角１２３", "🐟摸鱼"):
+        assert validate_gallery_alias(name) is None, name
+
+
 def test_fullwidth_digits_are_not_picture_ids():
     # 全角数字不被 id 解析识别，因此允许做画廊名，也不会遮蔽任何 id
     assert INTEGER_PATTERN.match("１２３") is None
     assert validate_gallery_name("１２３") is None
+
+
+# ---------- 「看 #<图片id>」显式取图 ----------
+
+
+def test_hash_prefix_parses_single_id():
+    assert parse_hash_picture_ids("#5") == [5]
+
+
+def test_hash_prefix_parses_multiple_ids():
+    assert parse_hash_picture_ids("#5 #7 #12") == [5, 7, 12]
+
+
+def test_hash_prefix_tolerates_space_and_mixed_tokens():
+    # 「看 # 5」与「看 #5」等价；混写时只要 token 都是整数就整条按 id 解析
+    assert parse_hash_picture_ids("# 5") == [5]
+    assert parse_hash_picture_ids("#5 7") == [5, 7]
+
+
+def test_hash_prefix_parses_negative_index():
+    # -1 是"最新入库的一张"，别名 -1 遮蔽它时同样要有逃生口
+    assert parse_hash_picture_ids("#-1") == [-1]
+
+
+def test_hash_prefix_ignores_non_integer_forms():
+    """带 # 但不全是整数时不成立——名称校验允许以 # 开头的画廊名，不能被抢走。"""
+    for arg in ("#abc", "#", "#memes x2", "# x2", "memes #5"):
+        assert parse_hash_picture_ids(arg) == [], arg
+
+
+def test_plain_tokens_are_not_hash_ids():
+    for arg in ("5", "5 7", "memes", "memes x2", ""):
+        assert parse_hash_picture_ids(arg) == [], arg
 
 
 # ---------- 文件系统安全 ----------

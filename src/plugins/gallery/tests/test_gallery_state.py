@@ -29,6 +29,7 @@ assert nonebot.load_plugin(_PKG_NAME) is not None, "插件加载失败"
 
 gallery = importlib.import_module(f"{_PKG_NAME}.gallery")
 handler = importlib.import_module(f"{_PKG_NAME}.handler")
+names = importlib.import_module(f"{_PKG_NAME}.names")
 _config = importlib.import_module(f"{_PKG_NAME}.config")
 cfg = _config.cfg
 gallery_name_data = _config.gallery_name_data
@@ -358,6 +359,57 @@ def test_duplicate_groups_detects_existing_copies():
 def test_duplicate_groups_on_empty_gallery():
     _register_gallery("空画廊")
     assert gallery.find_duplicate_groups("空画廊") == []
+
+
+# ---------- 纯数字别名与图片 id 共存 ----------
+
+
+def test_numeric_alias_shadows_bare_id_but_hash_prefix_still_reaches_it():
+    """纯数字别名与同号图片共存：「看 9601」归画廊，「看 #9601」仍精确取到图片。
+
+    这是放开纯数字别名的全部代价所在——只有 get_picture 的单 token 通路被遮蔽，
+    按 id 操作的命令（图片信息/打标签/设置封面/删除图片）都不查画廊名，不受影响。
+    """
+    name = "数字别名库"
+    _register_gallery(name)
+    picture = _add_picture(name, 9601)
+    v = gallery_name_data.instance
+    v.name_to_aliases[name] = ["9601"]
+    v.alias_to_name["9601"] = name
+    gallery_name_data.save_to_file()
+
+    # 「看 9601」：画廊名/别名优先，命中画廊而非图片
+    assert gallery.get_gallery_name("9601") == name
+    # 「看 #9601」：# 前缀强制按 id 解析，不受别名遮蔽
+    assert names.parse_hash_picture_ids("#9601") == [9601]
+    resolved = gallery.get_picture_by_id(9601)
+    assert resolved is not None and resolved.resolve() == picture.resolve()
+
+    # 遮蔽是可撤销的：删掉别名后裸数字重新落回图片 id
+    v.alias_to_name.pop("9601")
+    v.name_to_aliases[name] = []
+    gallery_name_data.save_to_file()
+    assert gallery.get_gallery_name("9601") is None
+
+
+def test_numeric_alias_does_not_disturb_negative_index_escape():
+    """别名叫 -1 会遮蔽「看 -1」（最新一张），但「看 #-1」仍能取到最新一张。"""
+    name = "倒数别名库"
+    _register_gallery(name)
+    _add_picture(name, 9701)
+    v = gallery_name_data.instance
+    v.name_to_aliases[name] = ["-1"]
+    v.alias_to_name["-1"] = name
+    gallery_name_data.save_to_file()
+
+    assert gallery.get_gallery_name("-1") == name
+    assert names.parse_hash_picture_ids("#-1") == [-1]
+    latest = gallery.list_picture_ids(include_hidden=True)[-1]
+    assert gallery.resolve_picture_index(-1, include_hidden=True) == latest
+
+    v.alias_to_name.pop("-1")
+    v.name_to_aliases[name] = []
+    gallery_name_data.save_to_file()
 
 
 def main() -> int:
